@@ -16,7 +16,7 @@ const API_VERSION: &str = "v1";
 )]
 pub(super) struct ThermavApi;
 
-pub fn create_router(hvac: thermav_lib::ThermaV) -> Router {
+pub fn create_router(hvac: String) -> Router {
     Router::new().nest(
         &format!("/{}", API_VERSION),
         Router::new()
@@ -41,12 +41,12 @@ pub fn create_router(hvac: thermav_lib::ThermaV) -> Router {
             ("name" = String, Path, description = "Register name"),
     ))]
 async fn get_coil(
-    Path(name): Path<String>,
-    State(hvac): State<thermav_lib::ThermaV>,
+    Path(_name): Path<String>,
+    State(hvac): State<String>,
 ) -> impl IntoResponse {
-    return (StatusCode::OK, Json(hvac)).into_response();
+    (StatusCode::OK, Json(hvac)).into_response()
 
-    not_found("Register not found".into(), None).into_response()
+    //not_found("Register not found".into(), None).into_response()
 }
 
 #[utoipa::path(post, path = "/v1/coils/{name}",
@@ -58,8 +58,8 @@ async fn get_coil(
             ("name" = String, Path, description = "Register name"),
     ))]
 async fn post_coil(
-    Path(name): Path<String>,
-    State(hvac): State<thermav_lib::ThermaV>,
+    Path(_name): Path<String>,
+    State(_hvac): State<String>,
 ) -> impl IntoResponse {
 
     not_found("Register not found".into(), None).into_response()

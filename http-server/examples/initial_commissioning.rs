@@ -1,4 +1,5 @@
 extern crate thermav_lib;
+use crate::thermav_lib::registers::ModbusRegister;
 use std::thread::sleep;
 use std::time::Duration;
 use thermav_lib::registers::{holding, coil, discrete};
@@ -26,22 +27,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         loop {
             println!("Reading ...");
-            if let Ok(Ok(data)) = read_coil(&mut ctx, coil::EnableDisableHeatingCooling::register()) {
+            if let Ok(Ok(data)) = read_coil(&mut ctx, coil::EnableDisableHeatingCooling::reg()) {
                 let res = coil::EnableDisableHeatingCooling::from(data);
                 println!("Heating/Cooling: {res}")
             }
             sleep(Duration::from_millis(100));
-            if let Ok(Ok(data)) = read_discrete(&mut ctx, discrete::CompressorStatus::register()) {
+            if let Ok(Ok(data)) = read_discrete(&mut ctx, discrete::CompressorStatus::reg()) {
                 let res = discrete::CompressorStatus::from(data);
                 println!("CompressorStatus: {res}")
             }
             sleep(Duration::from_millis(100));
-            if let Ok(Ok(data)) = read_discrete(&mut ctx, discrete::WaterPumpStatus::register()) {
+            if let Ok(Ok(data)) = read_discrete(&mut ctx, discrete::WaterPumpStatus::reg()) {
                 let res = discrete::WaterPumpStatus::from(data);
                 println!("WaterPumpStatus: {res}")
             }
             sleep(Duration::from_millis(100));
-            if let Ok(Ok(data)) = read_holding(&mut ctx, holding::ControlMethod::register()) {
+            if let Ok(Ok(data)) = read_holding(&mut ctx, holding::ControlMethod::reg()) {
                 let res = holding::ControlMethod::from(data);
                 println!("Control Method: {res:?}")
             }
@@ -52,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sleep(Duration::from_millis(100));
             read_input(&mut ctx, 9, "Durchfluss l/min");
             sleep(Duration::from_millis(100));
-            if let Ok(Ok(data)) = read_holding(&mut ctx, holding::OperationMode::register()) {
+            if let Ok(Ok(data)) = read_holding(&mut ctx, holding::OperationMode::reg()) {
                 let res = holding::OperationMode::from(data);
                 println!("Operation Mode: {res:?}")
             }

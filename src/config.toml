@@ -1,0 +1,26 @@
+[http]
+listen_address = "0.0.0.0"
+listen_port = 3000
+
+[therma]
+tty_path = "/dev/ttyUSB0"
+slave_id = 1
+timeout_ms = 1000
+
+[influx]
+url = "http://localhost"
+port = "8086"
+db = ""
+user = "root"
+password = ""
+id = "hvac"
+delta_t_sec = 10
+
+[mqtt]
+client_name = "hvac"
+host_name = "127.0.0.1"
+host_port = 1883
+topic = "/hvac"
+username = ""
+password = ""
+channel_size = 2

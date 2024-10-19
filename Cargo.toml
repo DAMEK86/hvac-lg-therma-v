@@ -32,10 +32,12 @@ axum = { version = "0.7.7", default-features = false, features = [
     "http1",
     "http2"
 ] }
+config = {version = "0.14", default-features = false, features = ["toml"]}
 futures = "0.3"
 log = "0.4.22"
 modbus-mapping = { path = "./modbus-mapping" }
 pretty_env_logger = "0.5"
+rumqttc = { version = "0.24.0", default-features = false, optional = true }
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
 tokio = { version = "1.40", default-features = false, features = [
@@ -46,7 +48,7 @@ tokio = { version = "1.40", default-features = false, features = [
 tokio-modbus = { version = "0.14", default-features = false, features = ["rtu", "rtu-sync", "rtu-server"]}
 tokio-serial = { version = "5.4", default-features = false }
 utoipa = { version = "5.0.0-rc.0", features = ["axum_extras"] }
-utoipa-swagger-ui = { version = "7.1.1-rc.0", features = ["axum"] }
+utoipa-swagger-ui = { version = "7.1.1-rc.0", features = ["axum", "debug-embed"] }
 
 [build-dependencies]
 modbus-mapping = { path = "./modbus-mapping" }
@@ -68,3 +70,7 @@ path = "http-server/examples/initial_commissioning.rs"
 resolver = "2"
 members = ["modbus-mapping", "."]
 default-members = ["modbus-mapping", "."]
+
+[features]
+default = ["mqtt"]
+mqtt = ["dep:rumqttc"]
