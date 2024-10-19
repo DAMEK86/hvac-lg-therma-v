@@ -191,11 +191,12 @@
     {
       "description": "Error Code",
       "reg": 0,
-      "type": "String"
+      "type": "i8"
     },
     {
       "description": "ODU operation Cycle",
       "reg": 1,
+      "type": "enum",
       "enum": {
         "Standby": 0,
         "Cooling": 1,
@@ -270,6 +271,7 @@
     {
       "description": "Product Information",
       "reg": 39998,
+      "type": "enum",
       "enum": {
         "Split": 0,
         "Monobloc": 3,

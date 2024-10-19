@@ -36,10 +36,20 @@ struct SignedData {
 }
 
 #[derive(Debug, Deserialize)]
+struct UnsignedShortData {
+    description: String,
+    reg: u16,
+    #[serde(rename = "type")]
+    #[allow(unused)]
+    data_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct Registers {
     holding: Vec<HoldingRegister>,
     coil: Vec<CoilRegister>,
     discrete: Vec<DiscreteRegister>,
+    input: Vec<InputRegister>
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,6 +61,19 @@ enum HoldingRegister {
     Float(FloatData),
     #[serde(rename = "i8")]
     SignedChar(SignedData),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+enum InputRegister {
+    #[serde(rename = "enum")]
+    Enum(EnumData),
+    #[serde(rename = "float")]
+    Float(FloatData),
+    #[serde(rename = "i8")]
+    SignedChar(SignedData),
+    #[serde(rename = "u16")]
+    UnsignedShort(UnsignedShortData)
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,6 +125,8 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
     let mut holding_generated_structs: Vec<TokenStream> = Vec::new();
     let mut coil_generated_structs: Vec<TokenStream> = Vec::new();
     let mut discrete_generated_structs: Vec<TokenStream> = Vec::new();
+    let mut input_generated_enums: Vec<TokenStream> = Vec::new();
+    let mut input_generated_structs: Vec<TokenStream> = Vec::new();
 
     for entry in parsed.holding {
         match entry {
@@ -127,6 +152,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
                 holding_generated_structs.push(quote! {
                     #[allow(unused)]
+                    #[derive(Debug)]
                     pub struct #name(f32);
 
                     impl ModbusRegister<Vec<u16>> for #name {
@@ -135,7 +161,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
                     impl From<Vec<u16>> for #name {
                         fn from(value: Vec<u16>) -> Self {
-                            #name(super::register_to_f32(value) * #gain_value)
+                            #name(value[0] as f32 * #gain_value)
                         }
                     }
                 });
@@ -150,6 +176,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
                 holding_generated_structs.push(quote! {
                     #[allow(unused)]
+                    #[derive(Debug)]
                     pub struct #name(i16);
 
                     impl #name {
@@ -163,6 +190,71 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
                     }
                 });
             }
+        }
+    }
+    
+    for entry in parsed.input {
+        match entry {
+            InputRegister::Enum(reg) => {
+                let name = syn::Ident::new(
+                    &sanitize_identifier(&reg.description),
+                    proc_macro2::Span::call_site(),
+                );
+
+                let reg_value = reg.reg;
+                if let Some(reg) = reg.enum_values {
+                    generate_enum(&mut input_generated_enums, name, reg, reg_value);
+                }
+            }
+            InputRegister::Float(reg) => {
+                let name = syn::Ident::new(
+                    &sanitize_identifier(&reg.description),
+                    proc_macro2::Span::call_site(),
+                );
+
+                let gain_value: f32 = reg.gain.unwrap_or(1f32);
+                let reg_value = reg.reg;
+
+                input_generated_structs.push(quote! {
+                    #[allow(unused)]
+                    #[derive(Debug)]
+                    pub struct #name(f32);
+
+                    impl ModbusRegister<Vec<u16>> for #name {
+                        fn reg() -> u16 { #reg_value }
+                    }
+
+                    impl From<Vec<u16>> for #name {
+                        fn from(value: Vec<u16>) -> Self {
+                            #name(value[0] as f32 * #gain_value)
+                        }
+                    }
+                });
+            }
+            InputRegister::SignedChar(reg) => {
+                let name = syn::Ident::new(
+                    &sanitize_identifier(&reg.description),
+                    proc_macro2::Span::call_site(),
+                );
+                let reg_value = reg.reg;
+
+                input_generated_structs.push(quote! {
+                    #[allow(unused)]
+                    #[derive(Debug)]
+                    pub struct #name(i16);
+
+                    impl #name {
+                        pub fn reg() -> u16 { #reg_value }
+                    }
+
+                    impl From<Vec<u16>> for #name {
+                        fn from(value: Vec<u16>) -> Self {
+                            #name(super::register_to_i16(value))
+                        }
+                    }
+                });
+            }
+            InputRegister::UnsignedShort(reg) => {}
         }
     }
 
@@ -279,6 +371,12 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
             use std::fmt;
             use crate::registers::ModbusRegister;
             #(#discrete_generated_structs)*
+        }
+        
+        pub mod input{
+            use crate::registers::ModbusRegister;
+            #(#input_generated_enums)*
+            #(#input_generated_structs)*
         }
 
         pub mod holding{

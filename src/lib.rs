@@ -1,4 +1,4 @@
-use crate::registers::{coil, discrete, holding, ModbusRegister};
+use crate::registers::{coil, discrete, holding, input, ModbusRegister};
 use std::result;
 use std::sync::{Arc};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,6 +33,7 @@ pub enum Register {
     Coil(u16, bool),
     Discrete(u16, bool),
     Holding(u16, Vec<u16>),
+    Input(u16, Vec<u16>),
 }
 
 pub trait SignalListener {
@@ -70,57 +71,140 @@ impl ThermaV {
                 discrete::DHWBoostHeaterStatus::reg(),
                 discrete::ErrorStatus::reg(),
             ];
+            let inputs: Vec<u16> = vec![
+                input::RoomAirTemperatureCircuit1::reg(),
+                input::RoomAirTemperatureCircuit2::reg(),
+                input::WaterInletTemperature::reg(),
+                input::WaterOutletTemperature::reg(),
+                input::OutdoorAirTemperature::reg(),
+            ];
             let holdings: Vec<u16> = vec![
                 holding::OperationMode::reg(),
                 holding::ControlMethod::reg(),
+                holding::EnergyStateInput::reg(),
                 holding::TargetTempHeatingCoolingCircuit1::reg(),
                 holding::TargetTempHeatingCoolingCircuit2::reg(),
+                holding::RoomAirTempCircuit1::reg(),
+                holding::RoomAirTempCircuit2::reg(),
+                holding::DHWTargetTemp::reg(),
+                holding::ShiftValueTargetInAutoModeCircuit1::reg(),
+                holding::ShiftValueTargetInAutoModeCircuit2::reg(),
             ];
+
+            let sleep_booleans_ms = Duration::from_millis(50);
+            let sleep_ms = Duration::from_millis(500);
 
             while !shutdown_listener.load(Ordering::Relaxed) {
                 for coil_reg in coils.clone() {
                     match ThermaV::get_coil(req_timeout, &mut ctx, coil_reg).await {
                         Ok(coil_value) => {
-                            if let Err(err) = tx.send(Register::Coil(coil_reg, coil_value)) {
-                                log::error!(target: "modbus:coil", "forwarding failed: {}", err)
+                            match tx.send(Register::Coil(coil_reg, coil_value)) {
+                                Ok(_) => info!(target: "modbus:coil", "reg {}={}", coil_reg, coil_value),
+                                Err(err) => log::error!(target: "modbus:coil", "forwarding failed: {}", err)
                             }
                         }
                         Err(err) => {
                             log::error!(target: "modbus:coil", "{}", err)
                         }
                     }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    tokio::time::sleep(sleep_booleans_ms).await;
                 }
 
                 for discrete_reg in discretes.clone() {
                     match ThermaV::get_discrete(req_timeout, &mut ctx, discrete_reg).await {
-                        Ok(coil_value) => {
-                            if let Err(err) = tx.send(Register::Discrete(discrete_reg, coil_value)) {
-                                log::error!(target: "modbus:discrete", "forwarding failed: {}", err)
+                        Ok(discrete_value) => {
+                            match tx.send(Register::Discrete(discrete_reg, discrete_value)) {
+                                Ok(_) => info!(target: "modbus:discrete", "reg {}={}", discrete_reg, discrete_value),
+                                Err(err) => log::error!(target: "modbus:discrete", "forwarding failed: {}", err)
                             }
                         }
                         Err(err) => {
                             log::error!(target: "modbus:discrete", "{}", err)
                         }
                     }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    tokio::time::sleep(sleep_booleans_ms).await;
+                }
+
+                for input_reg in inputs.clone() {
+                    match ThermaV::get_input(req_timeout, &mut ctx, input_reg).await {
+                        Ok(value) => {
+                            match tx.send(Register::Input(input_reg, value.clone())) {
+                                Ok(_) => {
+                                    if input_reg == input::RoomAirTemperatureCircuit1::reg() {
+                                        info!(target: "modbus:input", "RoomAirTemperatureCircuit1 {}={:?}", input_reg, input::RoomAirTemperatureCircuit1::from(value.clone()));
+                                    }
+                                    if input_reg == input::RoomAirTemperatureCircuit2::reg() {
+                                        info!(target: "modbus:input", "RoomAirTemperatureCircuit2 {}={:?}", input_reg, input::RoomAirTemperatureCircuit2::from(value.clone()));
+                                    }
+                                    if input_reg == input::WaterInletTemperature::reg() {
+                                        info!(target: "modbus:input", "WaterInletTemperature {}={:?}", input_reg, input::WaterInletTemperature::from(value.clone()));
+                                    }
+                                    if input_reg == input::WaterOutletTemperature::reg() {
+                                        info!(target: "modbus:input", "WaterOutletTemperature {}={:?}", input_reg, input::WaterOutletTemperature::from(value.clone()));
+                                    }
+                                    if input_reg == input::OutdoorAirTemperature::reg() {
+                                        info!(target: "modbus:input", "OutdoorAirTemperature {}={:?}", input_reg, input::OutdoorAirTemperature::from(value.clone()));
+                                    }
+                                }
+                                Err(err) => {
+                                    log::error!(target: "modbus:input", "{}", err)
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            log::error!(target: "modbus:input", "{}", err)
+                        }
+                    }
+                    tokio::time::sleep(sleep_ms).await;
                 }
 
                 for holding_reg in holdings.clone() {
                     match ThermaV::get_holding(req_timeout, &mut ctx, holding_reg).await {
-                        Ok(coil_value) => {
-                            if let Err(err) = tx.send(Register::Holding(holding_reg, coil_value)) {
-                                log::error!(target: "modbus:holding", "forwarding failed: {}", err)
+                        Ok(value) => {
+                            match tx.send(Register::Holding(holding_reg, value.clone())) {
+                                Ok(_) => {
+                                    if holding_reg == holding::OperationMode::reg() {
+                                        info!(target: "modbus:holding", "OperationMode {}={:?}", holding_reg, holding::OperationMode::from(value.clone()));
+                                    }
+                                    if holding_reg == holding::ControlMethod::reg() {
+                                        info!(target: "modbus:holding", "ControlMethod {}={:?}", holding_reg, holding::ControlMethod::from(value.clone()));
+                                    }
+                                    if holding_reg == holding::EnergyStateInput::reg() {
+                                        info!(target: "modbus:holding", "EnergyStateInput {}={:?}", holding_reg, holding::EnergyStateInput::from(value.clone()));
+                                    }
+                                    if holding_reg == holding::TargetTempHeatingCoolingCircuit1::reg() {
+                                        info!(target: "modbus:holding", "TargetTempHeatingCoolingCircuit1 {}={:?}", holding_reg, holding::TargetTempHeatingCoolingCircuit1::from(value.clone()));
+                                    }
+                                    if holding_reg == holding::TargetTempHeatingCoolingCircuit2::reg() {
+                                        info!(target: "modbus:holding", "TargetTempHeatingCoolingCircuit2 {}={:?}", holding_reg, holding::TargetTempHeatingCoolingCircuit2::from(value.clone()));
+                                    }
+                                    if holding_reg == holding::RoomAirTempCircuit1::reg() {
+                                        info!(target: "modbus:holding", "RoomAirTempCircuit1 {}={:?}", holding_reg, holding::RoomAirTempCircuit1::from(value.clone()));
+                                    }
+                                    if holding_reg == holding::RoomAirTempCircuit2::reg() {
+                                        info!(target: "modbus:holding", "RoomAirTempCircuit2 {}={:?}", holding_reg, holding::RoomAirTempCircuit2::from(value.clone()));
+                                    }
+                                    if holding_reg == holding::DHWTargetTemp::reg() {
+                                        info!(target: "modbus:holding", "DHWTargetTemp {}={:?}", holding_reg, holding::DHWTargetTemp::from(value.clone()));
+                                    }
+                                    if holding_reg == holding::ShiftValueTargetInAutoModeCircuit1::reg() {
+                                        info!(target: "modbus:holding", "ShiftValueTargetInAutoModeCircuit1 {}={:?}", holding_reg, holding::ShiftValueTargetInAutoModeCircuit1::from(value.clone()));
+                                    }
+                                    if holding_reg == holding::ShiftValueTargetInAutoModeCircuit2::reg() {
+                                        info!(target: "modbus:holding", "ShiftValueTargetInAutoModeCircuit2 {}={:?}", holding_reg, holding::ShiftValueTargetInAutoModeCircuit1::from(value.clone()));
+                                    }
+                                },
+                                Err(err) => log::error!(target: "modbus:holding", "forwarding failed: {}", err)
                             }
                         }
                         Err(err) => {
                             log::error!(target: "modbus:holding", "{}", err)
                         }
                     }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    tokio::time::sleep(sleep_ms).await;
                 }
 
-                tokio::time::sleep(Duration::from_millis(1000)).await;
+                tokio::time::sleep(Duration::from_millis(2000)).await;
             }
         });
 
@@ -158,6 +242,13 @@ impl ThermaV {
 
     pub async fn get_holding(req_timeout: Duration, ctx : &mut client::Context, reg: u16) -> Result<Vec<u16>> {
         if let Ok(Ok(Ok(result))) = timeout(req_timeout, ctx.read_holding_registers(reg, 1)).await {
+            return Ok(result);
+        }
+        Err(format!("read failed 0x{:02x}", reg))
+    }
+
+    pub async fn get_input(req_timeout: Duration, ctx : &mut client::Context, reg: u16) -> Result<Vec<u16>> {
+        if let Ok(Ok(Ok(result))) = timeout(req_timeout, ctx.read_input_registers(reg, 1)).await {
             return Ok(result);
         }
         Err(format!("read failed 0x{:02x}", reg))
