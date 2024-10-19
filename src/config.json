@@ -278,5 +278,80 @@
         "SystemBoiler": 6
       }
     }
+  ],
+  "holding": [
+    {
+      "description": "Operation Mode",
+      "reg": 0,
+      "enum": {
+        "Cooling": 0,
+        "Auto": 3,
+        "Heating": 4
+      }
+    },
+    {
+      "description": "Control method (Circuit 1/2)",
+      "reg": 1,
+      "enum": {
+        "WaterOutletTempControl": 0,
+        "WaterInletTempControl": 1,
+        "RoomAirControl": 2
+      }
+    },
+    {
+      "description": "Target temp (Heating/Cooling) Circuit 1",
+      "reg": 2,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Room Air Temp Circuit 1",
+      "reg": 3,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Shift value(Target) in auto mode Circuit 1",
+      "reg": 4,
+      "type": "i8"
+    },
+    {
+      "description": "Target temp (Heating/Cooling) Circuit 2",
+      "reg": 5,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Room Air Temp Circuit 2",
+      "reg": 6,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Shift value(Target) in auto mode Circuit 2",
+      "reg": 7,
+      "type": "i8"
+    },
+    {
+      "description": "DHW Target temp",
+      "reg": 8,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Energy state input",
+      "reg": 9,
+      "enum": {
+        "NotUse": 0,
+        "ForcedOff": 1,
+        "NormalOperation": 2,
+        "OnRecommendation": 3,
+        "OnCommand": 4,
+        "OnCommandStep2": 5,
+        "OnRecommendationStep1": 6,
+        "EnergySavingMode": 7,
+        "SuperEnergySavingMode": 8
+      }
+    }
   ]
 }
