@@ -1,6 +1,6 @@
-mod config;
+pub mod config;
+pub mod registers;
 
 struct ThermaV;
 
-impl ThermaV {
-}
+impl ThermaV {}

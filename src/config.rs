@@ -1,3 +1,2 @@
-pub const BAUD_RATE: u16 = 9600;
-
-
+pub const DEFAULT_BAUD_RATE: u32 = 9600;
+pub const DEFAULT_TIMEOUT: u64 = 1000;

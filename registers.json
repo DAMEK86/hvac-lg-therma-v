@@ -42,7 +42,7 @@
     },
     {
       "description": "Trigger Emergency Operation",
-      "reg": 4,
+      "reg": 5,
       "values": {
         "false": "Keep status",
         "true": "Operation Start"
@@ -163,7 +163,7 @@
       }
     },
     {
-      "description": "Emergency Operation Available (Space heating/cooling)",
+      "description": "Emergency Operation Available (Space Heating/Cooling)",
       "reg": 14,
       "values": {
         "false": "Unavailable",
@@ -283,6 +283,7 @@
     {
       "description": "Operation Mode",
       "reg": 0,
+      "type": "enum",
       "enum": {
         "Cooling": 0,
         "Auto": 3,
@@ -290,8 +291,9 @@
       }
     },
     {
-      "description": "Control method (Circuit 1/2)",
+      "description": "Control method",
       "reg": 1,
+      "type": "enum",
       "enum": {
         "WaterOutletTempControl": 0,
         "WaterInletTempControl": 1,
@@ -341,6 +343,7 @@
     {
       "description": "Energy state input",
       "reg": 9,
+      "type": "enum",
       "enum": {
         "NotUse": 0,
         "ForcedOff": 1,
