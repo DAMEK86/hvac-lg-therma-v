@@ -1,6 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 pub mod config;
 pub mod registers;
 
-struct ThermaV;
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ThermaV;
 
 impl ThermaV {}

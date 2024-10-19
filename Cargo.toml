@@ -26,15 +26,18 @@ overflow-checks = true
 strip = "debuginfo"
 
 [dependencies]
-axum = { version = "0.7.4", default-features = false, features = [
+axum = { version = "0.7.7", default-features = false, features = [
     "tokio",
     "json",
+    "http1",
+    "http2"
 ] }
 futures = "0.3"
 log = "0.4.22"
 modbus-mapping = { path = "./modbus-mapping" }
 pretty_env_logger = "0.5"
 serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.128"
 tokio = { version = "1.40", default-features = false, features = [
     "macros",
     "rt-multi-thread",
@@ -42,7 +45,8 @@ tokio = { version = "1.40", default-features = false, features = [
 ] }
 tokio-modbus = { version = "0.14", default-features = false, features = ["rtu", "rtu-sync", "rtu-server"]}
 tokio-serial = { version = "5.4", default-features = false }
-serde_json = "1.0.128"
+utoipa = { version = "5.0.0-rc.0", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "7.1.1-rc.0", features = ["axum"] }
 
 [build-dependencies]
 modbus-mapping = { path = "./modbus-mapping" }
