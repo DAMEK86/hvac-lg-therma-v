@@ -1,0 +1,282 @@
+{
+  "coil": [
+    {
+      "description": "Enable/Disable (Heating/Cooling)",
+      "reg": 0,
+      "values": {
+        "false": "Operation OFF",
+        "true": "Operation ON"
+      }
+    },
+    {
+      "description": "Enable/Disable (DHW)",
+      "reg": 1,
+      "values": {
+        "false": "Operation OFF",
+        "true": "Operation ON"
+      }
+    },
+    {
+      "description": "Silent Mode Set",
+      "reg": 2,
+      "values": {
+        "false": "Silent mode OFF",
+        "true": "Silent mode ON"
+      }
+    },
+    {
+      "description": "Trigger Disinfection operation",
+      "reg": 3,
+      "values": {
+        "false": "Keep status",
+        "true": "Operation start"
+      }
+    },
+    {
+      "description": "Emergency Stop",
+      "reg": 4,
+      "values": {
+        "false": "normal operation",
+        "true": "Emergency stop"
+      }
+    },
+    {
+      "description": "Trigger Emergency Operation",
+      "reg": 4,
+      "values": {
+        "false": "Keep status",
+        "true": "Operation Start"
+      }
+    }
+  ],
+  "discrete": [
+    {
+      "description" : "Water flow status",
+      "reg": 0,
+      "values": {
+        "false": "Flow rate ok",
+        "true": "Flow rate low"
+      }
+    },
+    {
+      "description" : "Water Pump status",
+      "reg": 1,
+      "values": {
+        "false": "Water Pump OFF",
+        "true": "Water Pump ON"
+      }
+    },
+    {
+      "description" : "Ext. Water Pump status",
+      "reg": 2,
+      "values": {
+        "false": "Water Pump OFF",
+        "true": "Water Pump ON"
+      }
+    },
+    {
+      "description" : "Compressor status",
+      "reg": 3,
+      "values": {
+        "false": "Compressor OFF",
+        "true": "Compressor ON"
+      }
+    },
+    {
+      "description" : "Defrosting status",
+      "reg": 4,
+      "values": {
+        "false": "Defrost OFF",
+        "true": "Defrost ON"
+      }
+    },
+    {
+      "description" : "DHW heating status (DHW Thermal On/Off)",
+      "reg": 5,
+      "values": {
+        "false": "DHW inactive",
+        "true": "DHW active"
+      }
+    },
+    {
+      "description" : "DHW Tank disinfection status",
+      "reg": 6,
+      "values": {
+        "false": "Disinfection inactive",
+        "true": "Disinfection active"
+      }
+    },
+    {
+      "description" : "Silent mode status",
+      "reg": 7,
+      "values": {
+        "false": "Silent mode inactive",
+        "true": "Silent mode active"
+      }
+    },
+    {
+      "description" : "Cooling status",
+      "reg": 8,
+      "values": {
+        "false": "No cooling",
+        "true": "Cooling operation"
+      }
+    },
+    {
+      "description" : "Solar pump status",
+      "reg": 9,
+      "values": {
+        "false": "No cooling",
+        "true": "Cooling operation"
+      }
+    },
+    {
+      "description" : "Backup heater (Step 1) status",
+      "reg": 10,
+      "values": {
+        "false": "OFF",
+        "true": "ON"
+      }
+    },
+    {
+      "description" : "Backup heater (Step 2) status",
+      "reg": 11,
+      "values": {
+        "false": "OFF",
+        "true": "ON"
+      }
+    },
+    {
+      "description" : "DHW boost heater status",
+      "reg": 12,
+      "values": {
+        "false": "OFF",
+        "true": "ON"
+      }
+    },
+    {
+      "description" : "Error status",
+      "reg": 13,
+      "values": {
+        "false": "no error",
+        "true": "error state"
+      }
+    },
+    {
+      "description": "Emergency Operation Available (Space heating/cooling)",
+      "reg": 14,
+      "values": {
+        "false": "Unavailable",
+        "true": "Available"
+      }
+    },
+    {
+      "description" : "Emergency Operation Available (DHW)",
+      "reg": 15,
+      "values": {
+        "false": "Unavailable",
+        "true": "Available"
+      }
+    },
+    {
+      "description" : "Mix pump status",
+      "reg": 16,
+      "values": {
+        "false": "Mix pump OFF",
+        "true": "Mix pump ON"
+      }
+    }
+  ],
+  "input": [
+    {
+      "description": "Error Code",
+      "reg": 0,
+      "type": "String"
+    },
+    {
+      "description": "ODU operation Cycle",
+      "reg": 1,
+      "enum": {
+        "Standby": 0,
+        "Cooling": 1,
+        "Heating": 2
+      }
+    },
+    {
+      "description": "Water inlet temperature",
+      "reg": 2,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Water outlet temperature",
+      "reg": 3,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Backup heater outlet temperature",
+      "reg": 4,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "DHW tank water temperature",
+      "reg": 5,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Solar collector temperature",
+      "reg": 6,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Room air temperature (Circuit 1)",
+      "reg": 7,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Current Flow rate",
+      "reg": 8,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Flow temperature (Circuit 2)",
+      "reg": 9,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Room air temperature (Circuit 2)",
+      "reg": 10,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Energy State Input",
+      "reg": 11,
+      "type": "u16"
+    },
+    {
+      "description": "Outdoor Air temperature",
+      "reg": 12,
+      "type": "float",
+      "gain": 0.1
+    },
+    {
+      "description": "Product Information",
+      "reg": 39998,
+      "enum": {
+        "Split": 0,
+        "Monobloc": 3,
+        "HighTemp": 4,
+        "MediumTemp": 5,
+        "SystemBoiler": 6
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+[package]
+name = "hvac-lg-therma-v"
+version = "0.1.0"
+edition = "2021"
+license-file = "LICENSE"
+authors = ["Andreas Rehn <rehn.andreas86@gmail.com>"]
+homepage = "https://github.com/DAMEK86/hvac-lg-therma-v"
+description = "LG Therma V modbus RTU abstraction"
+
+[lib]
+path = "src/lib.rs"
+name = "thermav_lib"
+doc = true
+
+[profile.release]
+opt-level = 3          # Optimize for speed.
+lto = "thin"           # Enable Link Time Optimization
+codegen-units = 1      # Reduce number of codegen units to increase optimizations.
+debug = false
+overflow-checks = true
+strip = "debuginfo"
+
+[dependencies]
+axum = { version = "0.7.4", default-features = false, features = [
+    "tokio",
+    "json",
+] }
+pretty_env_logger = "0.5"
+tokio = { version = "1.40", default-features = false, features = [
+    "macros",
+    "rt-multi-thread",
+    "signal",
+] }
+serde = { version = "1.0.210", features = ["derive"] }
+
+[dev-dependencies]
+axum-test-helper = "0.*"
+mockall = "0.13"
+httptest = "0.16"
+
+[[example]]
+name = "manual"
+path = "http-server/examples/initial_commissioning.rs"
+
+[workspace]
+resolver = "2"
+members = ["http-server", "."]
+default-members = ["http-server", "."]
+
+[workspace.dependencies]
+futures = "0.3"
+serde = { version = "1.0.210", features = ["derive"] }
+tokio-modbus = { version = "0.14", default-features = false, features = ["rtu", "rtu-sync", "rtu-server"]}
+tokio-serial = { version = "5.4", default-features = false }
+log = "0.4.22"

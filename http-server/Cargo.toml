@@ -1,0 +1,13 @@
+[package]
+name = "http-server"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+config = { version = "0.14", default-features = false, features = ["json"] }
+log = { workspace = true }
+serde = { workspace = true }
+tokio = "1.40.0"
+tokio-modbus = { workspace = true }
+tokio-serial = { workspace = true }
