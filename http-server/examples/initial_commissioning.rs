@@ -2,7 +2,7 @@ extern crate thermav_lib;
 use crate::thermav_lib::registers::ModbusRegister;
 use std::thread::sleep;
 use std::time::Duration;
-use thermav_lib::registers::{holding, coil, discrete};
+use thermav_lib::registers::{coil, discrete, holding};
 use tokio::task;
 use tokio_modbus::client::sync::Context;
 use tokio_modbus::prelude::*;

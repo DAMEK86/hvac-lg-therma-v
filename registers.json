@@ -207,13 +207,19 @@
       "description": "Water inlet temperature",
       "reg": 2,
       "type": "float",
-      "gain": 0.1
+      "gain": 0.1,
+      "unit": "°C",
+      "icon": "mdi:water-thermometer",
+      "class": "temperature"
     },
     {
       "description": "Water outlet temperature",
       "reg": 3,
       "type": "float",
-      "gain": 0.1
+      "gain": 0.1,
+      "unit": "°C",
+      "icon": "mdi:water-thermometer-outline",
+      "class": "temperature"
     },
     {
       "description": "Backup heater outlet temperature",

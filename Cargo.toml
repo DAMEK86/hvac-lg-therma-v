@@ -32,29 +32,29 @@ axum = { version = "0.7.7", default-features = false, features = [
     "http1",
     "http2"
 ] }
-config = {version = "0.14", default-features = false, features = ["toml"]}
-futures = "0.3"
-log = "0.4.22"
+config = {version = "0.15.6", default-features = false, features = ["toml"]}
+log = "0.4.25"
 modbus-mapping = { path = "./modbus-mapping" }
 pretty_env_logger = "0.5"
 rumqttc = { version = "0.24.0", default-features = false, optional = true }
-serde = { version = "1.0.210", features = ["derive"] }
-serde_json = "1.0.128"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0"
 tokio = { version = "1.40", default-features = false, features = [
     "macros",
     "rt-multi-thread",
     "signal",
 ] }
-tokio-modbus = { version = "0.14", default-features = false, features = ["rtu", "rtu-sync", "rtu-server"]}
+tokio-modbus = { version = "0.16.1", default-features = false, features = ["rtu", "rtu-sync", "rtu-server", "tcp-server", "rtu-over-tcp-server"]}
 tokio-serial = { version = "5.4", default-features = false }
-utoipa = { version = "5.0.0-rc.0", features = ["axum_extras"] }
-utoipa-swagger-ui = { version = "7.1.1-rc.0", features = ["axum", "debug-embed"] }
+utoipa = { version = "5.1.1", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "8.0.1", features = ["axum", "debug-embed"] }
+async-trait = "0.1.82"
 
 [build-dependencies]
 modbus-mapping = { path = "./modbus-mapping" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-syn = "2.0.77"
+syn = "2.0"
 prettyplease = "0.2"
 
 [dev-dependencies]
@@ -72,5 +72,6 @@ members = ["modbus-mapping", "."]
 default-members = ["modbus-mapping", "."]
 
 [features]
-default = ["mqtt"]
+default = ["hass"]
 mqtt = ["dep:rumqttc"]
+hass = ["mqtt"]

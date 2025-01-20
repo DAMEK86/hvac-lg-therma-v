@@ -1,5 +1,5 @@
+use axum::http::StatusCode;
 use axum::{response::IntoResponse, Json};
-use axum::http::{StatusCode};
 
 pub struct Error {
     pub status_code: StatusCode,

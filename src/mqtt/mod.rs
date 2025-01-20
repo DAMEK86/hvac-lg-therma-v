@@ -1,5 +1,8 @@
 pub mod modbus_to_mqtt;
 
+#[cfg(feature = "hass")]
+pub mod hass;
+
 use crate::config::MqttConfig;
 use rumqttc::{AsyncClient, EventLoop, MqttOptions, QoS};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,15 +38,44 @@ impl Client {
     pub async fn publish<Topic, Payload>(&self, topic: Topic, payload: Payload) -> Option<String>
     where
         Topic: Into<String>,
-        Payload: Into<Vec<u8>> + Clone,
+        Payload: Into<Vec<u8>>,
     {
         match self
             .mqtt_client
-            .publish(format!("{}/{}", &self.base_topic, topic.into()), QoS::AtLeastOnce, false, payload.clone())
+            .publish(
+                format!("{}", topic.into()),
+                QoS::AtLeastOnce,
+                false,
+                payload,
+            )
             .await
         {
             Ok(_) => None,
             Err(e) => Some(format!("Error publishing topic: {:?}", e)),
+        }
+    }
+
+    pub async fn publish_with_base_topic<Topic, Payload>(
+        &self,
+        topic: Topic,
+        payload: Payload,
+    ) -> Result<(), String>
+    where
+        Topic: Into<String>,
+        Payload: Into<Vec<u8>>,
+    {
+        match self
+            .mqtt_client
+            .publish(
+                format!("{}/{}", &self.base_topic, topic.into()),
+                QoS::AtLeastOnce,
+                false,
+                payload,
+            )
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Error publishing topic: {:?}", e)),
         }
     }
 }

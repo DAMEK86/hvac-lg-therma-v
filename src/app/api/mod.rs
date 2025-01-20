@@ -1,15 +1,15 @@
-mod thermav;
 mod error;
+mod thermav;
 
-use axum::{Router};
+use crate::api::error::Error;
 use axum::http::StatusCode;
 use axum::routing::get;
+use axum::Router;
+use thermav_lib::config::HttpConfig;
 use tokio::net::TcpListener;
 use tokio::signal;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
-use thermav_lib::config::HttpConfig;
-use crate::api::error::Error;
 
 pub async fn start_service(cfg: HttpConfig) {
     #[derive(OpenApi)]
@@ -35,10 +35,13 @@ pub async fn start_service(cfg: HttpConfig) {
 
     log::info!(target: "api", "Listening on http://{}", addr);
 
-    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await.unwrap_or_else(|e| {
-        log::error!(target: "api", "Unable to start server: {}", e);
-        std::process::exit(1);
-    });
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap_or_else(|e| {
+            log::error!(target: "api", "Unable to start server: {}", e);
+            std::process::exit(1);
+        });
 }
 
 async fn shutdown_signal() {
@@ -64,7 +67,6 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 }
-
 
 /// Get health of the API.
 #[utoipa::path(get, path = "/health", responses((status = OK, body = str)))]

@@ -13,7 +13,7 @@ struct EnumData {
     description: String,
     reg: u16,
     #[serde(rename = "enum")]
-    enum_values: Option<HashMap<String, u16>>
+    enum_values: Option<HashMap<String, u16>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,7 +49,7 @@ struct Registers {
     holding: Vec<HoldingRegister>,
     coil: Vec<CoilRegister>,
     discrete: Vec<DiscreteRegister>,
-    input: Vec<InputRegister>
+    input: Vec<InputRegister>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,7 +73,7 @@ enum InputRegister {
     #[serde(rename = "i8")]
     SignedChar(SignedData),
     #[serde(rename = "u16")]
-    UnsignedShort(UnsignedShortData)
+    UnsignedShort(UnsignedShortData),
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,7 +118,8 @@ fn sanitize_identifier(name: &str) -> String {
 
 pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
     // Read the JSON file
-    let json_data = fs::read_to_string(modbus_register_data_file_path).expect("Unable to read JSON file");
+    let json_data =
+        fs::read_to_string(modbus_register_data_file_path).expect("Unable to read JSON file");
     let parsed: Registers = serde_json::from_str(&json_data).expect("Invalid JSON format");
 
     let mut holding_generated_enums: Vec<TokenStream> = Vec::new();
@@ -131,21 +132,17 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
     for entry in parsed.holding {
         match entry {
             HoldingRegister::Enum(reg) => {
-                let name = syn::Ident::new(
-                    &sanitize_identifier(&reg.description),
-                    proc_macro2::Span::call_site(),
-                );
+                let reg_name = sanitize_identifier(&reg.description);
+                let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
 
                 let reg_value = reg.reg;
                 if let Some(reg) = reg.enum_values {
-                    generate_enum(&mut holding_generated_enums, name, reg, reg_value);
+                    generate_enum(&mut holding_generated_enums, reg_name, name, reg, reg_value);
                 }
-            },
+            }
             HoldingRegister::Float(reg) => {
-                let name = syn::Ident::new(
-                    &sanitize_identifier(&reg.description),
-                    proc_macro2::Span::call_site(),
-                );
+                let reg_name = sanitize_identifier(&reg.description);
+                let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
 
                 let gain_value: f32 = reg.gain.unwrap_or(1f32);
                 let reg_value = reg.reg;
@@ -157,6 +154,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
                     impl ModbusRegister<Vec<u16>> for #name {
                         fn reg() -> u16 { #reg_value }
+                        fn topic() -> String { #reg_name.to_string() }
                     }
 
                     impl From<Vec<u16>> for #name {
@@ -165,13 +163,10 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
                         }
                     }
                 });
-
             }
             HoldingRegister::SignedChar(reg) => {
-                let name = syn::Ident::new(
-                    &sanitize_identifier(&reg.description),
-                    proc_macro2::Span::call_site(),
-                );
+                let reg_name = sanitize_identifier(&reg.description);
+                let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
                 let reg_value = reg.reg;
 
                 holding_generated_structs.push(quote! {
@@ -179,8 +174,9 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
                     #[derive(Debug)]
                     pub struct #name(i16);
 
-                    impl #name {
-                        pub fn reg() -> u16 { #reg_value }
+                    impl ModbusRegister<Vec<u16>> for #name {
+                        fn reg() -> u16 { #reg_value }
+                        fn topic() -> String { #reg_name.to_string() }
                     }
 
                     impl From<Vec<u16>> for #name {
@@ -192,25 +188,21 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
             }
         }
     }
-    
+
     for entry in parsed.input {
         match entry {
             InputRegister::Enum(reg) => {
-                let name = syn::Ident::new(
-                    &sanitize_identifier(&reg.description),
-                    proc_macro2::Span::call_site(),
-                );
+                let reg_name = sanitize_identifier(&reg.description);
+                let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
 
                 let reg_value = reg.reg;
                 if let Some(reg) = reg.enum_values {
-                    generate_enum(&mut input_generated_enums, name, reg, reg_value);
+                    generate_enum(&mut input_generated_enums, reg_name, name, reg, reg_value);
                 }
             }
             InputRegister::Float(reg) => {
-                let name = syn::Ident::new(
-                    &sanitize_identifier(&reg.description),
-                    proc_macro2::Span::call_site(),
-                );
+                let reg_name = sanitize_identifier(&reg.description);
+                let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
 
                 let gain_value: f32 = reg.gain.unwrap_or(1f32);
                 let reg_value = reg.reg;
@@ -222,6 +214,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
                     impl ModbusRegister<Vec<u16>> for #name {
                         fn reg() -> u16 { #reg_value }
+                        fn topic() -> String { #reg_name.to_string() }
                     }
 
                     impl From<Vec<u16>> for #name {
@@ -259,10 +252,8 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
     }
 
     for entry in parsed.coil {
-        let name = syn::Ident::new(
-            &sanitize_identifier(&entry.description),
-            proc_macro2::Span::call_site(),
-        );
+        let reg_name = sanitize_identifier(&entry.description);
+        let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
 
         let reg_value = entry.reg;
         let true_value = entry.values.r#true;
@@ -279,6 +270,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
             impl ModbusRegister<Vec<bool>> for #name {
                 fn reg() -> u16 { #reg_value }
+                fn topic() -> String { #reg_name.to_string() }
             }
 
             impl #name {
@@ -300,10 +292,8 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
     }
 
     for entry in parsed.discrete {
-        let name = syn::Ident::new(
-            &sanitize_identifier(&entry.description),
-            proc_macro2::Span::call_site(),
-        );
+        let reg_name = sanitize_identifier(&entry.description);
+        let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
 
         let reg_value = entry.reg;
         let true_value = entry.values.r#true;
@@ -320,6 +310,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
             impl ModbusRegister<Vec<bool>> for #name {
                 fn reg() -> u16 { #reg_value }
+                fn topic() -> String { #reg_name.to_string() }
             }
 
             impl #name {
@@ -359,6 +350,10 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
         pub trait ModbusRegister<T> : From<T> {
             fn reg() -> u16;
+            fn topic() -> String;
+            fn structure() -> (String, u16) {
+                (Self::topic(), Self::reg())
+            }
         }
 
         pub mod coil {
@@ -372,7 +367,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
             use crate::registers::ModbusRegister;
             #(#discrete_generated_structs)*
         }
-        
+
         pub mod input{
             use crate::registers::ModbusRegister;
             #(#input_generated_enums)*
@@ -389,6 +384,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
 fn generate_enum(
     generated_enums: &mut Vec<TokenStream>,
+    reg_name: String,
     enum_name: Ident,
     reg: HashMap<String, u16>,
     reg_value: u16,
@@ -426,6 +422,7 @@ fn generate_enum(
 
         impl ModbusRegister<Vec<u16>> for #enum_name {
             fn reg() -> u16 { #reg_value }
+            fn topic() -> String { #reg_name.to_string() }
         }
 
         impl From<Vec<u16>> for #enum_name {

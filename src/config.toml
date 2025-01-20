@@ -18,9 +18,9 @@ delta_t_sec = 10
 
 [mqtt]
 client_name = "hvac"
-host_name = "127.0.0.1"
+host_name = "192.168.178.33"
 host_port = 1883
-topic = "/hvac"
-username = ""
-password = ""
+topic = "homeassistant"
+username = "evcc"
+password = "h8yx3QB32UCq5k"
 channel_size = 2
