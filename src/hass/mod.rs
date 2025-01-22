@@ -1,10 +1,10 @@
-use crate::{Register, SignalListener};
+use crate::{mqtt, rwlock_read_guard, rwlock_write_guard, SignalListener};
 use config::Map;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{Arc};
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct Discovery {
     #[serde(rename = "dev")]
     pub device: Device,
@@ -37,7 +37,7 @@ pub struct Origin {
     pub support_url: Option<String>,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Clone)]
 pub struct Component {
     pub name: String,
     pub object_id: String,
@@ -56,18 +56,60 @@ pub struct Component {
     #[serde(rename = "unit_of_meas", skip_serializing_if = "Option::is_none")]
     pub unit_of_measurement: Option<String>,
     pub icon: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modes: Option<Vec<String>>,
+    #[serde(rename = "mode_stat_t", skip_serializing_if = "Option::is_none")]
+    pub mode_state_topic: Option<String>,
+    #[serde(rename = "mode_cmd_t", skip_serializing_if = "Option::is_none")]
+    pub mode_command_topic: Option<String>,
+    #[serde(rename = "temp_stat_t", skip_serializing_if = "Option::is_none")]
+    pub temperature_state_topic: Option<String>,
+    #[serde(rename = "temp_cmd_t", skip_serializing_if = "Option::is_none")]
+    pub temperature_command_topic: Option<String>,
+    #[serde(rename = "curr_temp_t", skip_serializing_if = "Option::is_none")]
+    pub current_temperature_topic: Option<String>,
 }
 
 impl Component {
-    pub fn new(device_name: String, id: String) -> Self {
+    pub fn new(name: &str, device_name: &str, id: &str, icon: &str) -> Self {
         Self {
+            name: String::from(name),
             object_id: format!("{}.{}", device_name, id),
             unique_id: format!("{}.{}", device_name, id),
+            state_topic: format!("{}/{}.{}", device_name, device_name.to_lowercase(), id),
             availability_topic: format!("{}/$state", device_name),
             payload_available: String::from("ready"),
             payload_not_available: String::from("lost"),
+            icon: icon.to_string(),
             ..Default::default()
         }
+    }
+
+    pub fn temperature_sensor(mut self) -> Self {
+        self.platform = "sensor".to_string();
+        self.device_class = Some("temperature".to_string());
+        self.unit_of_measurement = Some("°C".to_string());
+        self
+    }
+
+    pub fn binary_sensor(mut self) -> Self {
+        self.platform = "binary_sensor".to_string();
+        self.device_class = Some("opening".to_string());
+        self
+    }
+
+    pub fn water_heater(mut self, modes: Vec<&str>) -> Self {
+        self.platform = "water_heater".to_string();
+        self.mode_state_topic = Some(format!("{}/mode", self.state_topic.clone()));
+        self.mode_command_topic = Some(format!("{}/mode/set", self.state_topic.clone()));
+        self.temperature_state_topic = Some(format!("{}/temperature", self.state_topic.clone()));
+        self.temperature_command_topic =
+            Some(format!("{}/temperature/set", self.state_topic.clone()));
+        self.current_temperature_topic =
+            Some(format!("{}/current_temperature", self.state_topic.clone()));
+        self.modes = Some(modes.iter().map(|s| s.to_string()).collect());
+        self
     }
 }
 
@@ -116,10 +158,6 @@ impl From<DeviceConfig> for Device {
     }
 }
 
-// publisher
-// device config
-// device state (online/offline)
-// sensor mapping
 fn create_discovery_message() -> Discovery {
     let device_config: DeviceConfig = DeviceConfig {
         id: "lg_therma_v".to_string(),
@@ -129,46 +167,35 @@ fn create_discovery_message() -> Discovery {
     };
 
     let mut map = Map::<String, Component>::new();
-    let mut comp = Component::new("ThermaV".to_string(), "inlet_temperature".to_string());
-    comp.name = "Inlet Temperature".to_string();
-    comp.state_topic = "ThermaV/inlet_temperature".to_string();
-    comp.platform = "sensor".to_string();
-    comp.device_class = Some("temperature".to_string());
-    comp.unit_of_measurement = Some("°C".to_string());
-    comp.icon = "mdi:water-thermometer".to_string();
-    map.insert("inlet_temperature1234".to_string(), comp);
+    map.insert(
+        map.len().to_string(),
+        Component::new(
+            "Inlet Temperature",
+            "ThermaV",
+            "inlet_temperature",
+            "mdi:water-thermometer",
+        )
+        .temperature_sensor(),
+    );
 
     map.insert(
-        "water_flow1234".to_string(),
-        Component {
-            name: "Water Flow Status".to_string(),
-            object_id: "thermav.water_flow_status".to_string(),
-            unique_id: "thermav.water_flow_status".to_string(),
-            state_topic: "ThermaV/thermav.water_flow_status".to_string(),
-            platform: "binary_sensor".to_string(),
-            availability_topic: "ThermaV/$state".to_string(),
-            device_class: Some("opening".to_string()),
-            payload_available: String::from("ready"),
-            payload_not_available: String::from("lost"),
-            unit_of_measurement: None,
-            icon: "mdi:water-pump".to_string(),
-        },
+        map.len().to_string(),
+        Component::new(
+            "Water Flow Status",
+            "ThermaV",
+            "water_flow_status",
+            "mdi:water-pump",
+        )
+        .binary_sensor(),
     );
     map.insert(
-        "dhw1234".to_string(),
-        Component {
-            name: "DHW".to_string(),
-            object_id: "thermav.dhw".to_string(),
-            unique_id: "thermav.dhw".to_string(),
-            state_topic: "ThermaV/dhw/availability".to_string(),
-            availability_topic: "ThermaV/$state".to_string(),
-            payload_available: String::from("ready"),
-            payload_not_available: String::from("lost"),
-            device_class: None,
-            unit_of_measurement: None,
-            platform: "water_heater".to_string(),
-            icon: "mdi:water-boiler".to_string(),
-        },
+        map.len().to_string(),
+        Component::new("DHW", "ThermaV", "dhw", "mdi:water-boiler").water_heater(vec![
+            "off",
+            "eco",
+            "heat_pump",
+            "performance",
+        ]),
     );
 
     Discovery {
@@ -196,24 +223,33 @@ impl From<BinarySensor> for Vec<u8> {
 }
 
 pub fn start_hass_mqtt_bridge_task<T>(
-    mqtt_client: Arc<super::Client>,
+    mqtt_client: mqtt::Client,
     modbus_frame_listener: &T,
     signal: Arc<AtomicBool>,
 ) where
     T: SignalListener,
 {
+    let mqtt_client = Arc::new(tokio::sync::RwLock::new(mqtt_client));
     let mut modbus_rx = modbus_frame_listener.register_receiver();
+    let mut hass_client = Hass::new(mqtt_client.clone(), String::from("ThermaV"));
     tokio::spawn(async move {
-        if let Err(error) = mqtt_client
-            .publish_with_base_topic(
-                format!("device/{}/config", String::from("lg_therma_v")),
-                create_discovery_message(),
-            )
-            .await
+        let discovery_message = create_discovery_message();
         {
-            log::error!(target: "mqtt-client", "failed to publish discovery msg: {error}");
+            let client = rwlock_read_guard(&mqtt_client).await;
+            if let Err(error) = client
+                .publish_with_base_topic(
+                    format!("device/{}/config", String::from("lg_therma_v")),
+                    discovery_message.clone(),
+                )
+                .await
+            {
+                log::error!(target: "mqtt-client", "failed to publish discovery msg: {error}");
+            }
         }
-        let hass_client = Hass::new(mqtt_client, String::from("ThermaV"));
+
+        hass_client.subscribe(discovery_message).await;
+
+        hass_client.publish_state(true).await;
         let mut state = BinarySensor(false);
         loop {
             if signal.load(std::sync::atomic::Ordering::Relaxed) {
@@ -221,7 +257,7 @@ pub fn start_hass_mqtt_bridge_task<T>(
             }
 
             if let Some(error) = hass_client
-                .send_sensor_data("thermav.water_flow_status".to_string(), state.clone())
+                .send_sensor_data("thermav.water_flow_status", state.clone())
                 .await
             {
                 log::error!(target: "mqtt-client", "failed to send data: {error}");
@@ -230,6 +266,7 @@ pub fn start_hass_mqtt_bridge_task<T>(
             state.0 = !state.0;
         }
 
+        /*
         loop {
             if signal.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
@@ -295,40 +332,78 @@ pub fn start_hass_mqtt_bridge_task<T>(
                     .await;
             }
         }
+        */
     });
 }
 
 struct Hass {
-    mqtt_client: Arc<super::Client>,
+    mqtt_client: Arc<tokio::sync::RwLock<mqtt::Client>>,
     instance_name: String,
 }
 
 impl Hass {
-    pub fn new(mqtt_client: Arc<super::Client>, instance_name: String) -> Self {
+    pub fn new(mqtt_client: Arc<tokio::sync::RwLock<mqtt::Client>>, instance_name: String) -> Self {
         Self {
-            mqtt_client: mqtt_client.clone(),
+            mqtt_client,
             instance_name,
         }
     }
 
-    pub async fn send_sensor_data1<T>(&self, sensor_id: String, state: T) -> Result<(), String>
+    pub async fn send_sensor_data<T>(&self, sensor_id: &str, state: T) -> Option<String>
     where
         T: Into<Vec<u8>>,
     {
-        self.mqtt_client
-            .publish_with_base_topic(
-                format!("sensor/{}/{}", self.instance_name, sensor_id),
-                state,
-            )
+        let locked_mqtt_client = rwlock_read_guard(&self.mqtt_client).await;
+        locked_mqtt_client
+            .publish(format!("{}/{}", self.instance_name, sensor_id), state)
             .await
     }
 
-    pub async fn send_sensor_data<T>(&self, sensor_id: String, state: T) -> Option<String>
-    where
-        T: Into<Vec<u8>>,
-    {
-        self.mqtt_client
-            .publish(format!("{}/{}", self.instance_name, sensor_id), state)
+    pub async fn subscribe(&mut self, device_discovery: Discovery) {
+        let mut client = rwlock_write_guard(&self.mqtt_client).await;
+        for component in device_discovery.components {
+            if let Some(topic) = component.1.mode_command_topic {
+                if let Err(err) = client
+                    .subscribe(
+                        topic,
+                        Arc::new(|topic, payload| {
+                            println!("receive 'mode_command_topic' {}: {}", topic, payload);
+                        }),
+                    )
+                    .await
+                {
+                    log::error!(target: "mqtt-client", "failed to subscribe msg: {err}");
+                }
+            }
+
+            if let Some(topic) = component.1.temperature_command_topic {
+                if let Err(err) = client
+                    .subscribe(
+                        topic,
+                        Arc::new(|topic, payload| {
+                            println!("receive 'temperature_command_topic' {}: {}", topic, payload);
+                        }),
+                    )
+                    .await
+                {
+                    log::error!(target: "mqtt-client", "failed to subscribe msg: {err}");
+                }
+            }
+        }
+    }
+
+    pub async fn publish_state(&self, state: bool) -> Option<String> {
+        let mut value = "lost";
+        if state {
+            value = "ready";
+        }
+
+        let client = rwlock_read_guard(&self.mqtt_client).await;
+        client
+            .publish(
+                format!("{}/$state", self.instance_name),
+                value.as_bytes().to_vec(),
+            )
             .await
     }
 }

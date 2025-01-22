@@ -7,13 +7,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::{self, Receiver, Sender};
+use tokio::sync::RwLock;
 use tokio::time::timeout;
-use tokio_modbus::client::{rtu, Reader};
+use tokio_modbus::client::{rtu, Context, Reader};
 use tokio_modbus::prelude::*;
 use tokio_modbus::Slave;
 use tokio_serial::SerialStream;
 
 pub mod config;
+#[cfg(feature = "hass")]
+pub mod hass;
 mod modbus;
 #[allow(dead_code)]
 #[cfg(feature = "mqtt")]
@@ -21,6 +24,14 @@ pub mod mqtt;
 pub mod registers;
 
 pub type Result<T> = result::Result<T, String>;
+
+pub async fn rwlock_read_guard<T>(rwlock: &RwLock<T>) -> tokio::sync::RwLockReadGuard<'_, T> {
+    rwlock.read().await
+}
+
+pub async fn rwlock_write_guard<T>(rwlock: &RwLock<T>) -> tokio::sync::RwLockWriteGuard<'_, T> {
+    rwlock.write().await
+}
 
 #[derive(Clone, Debug)]
 #[allow(unused)]
@@ -104,7 +115,7 @@ impl ThermaV {
 
                         let sleep_booleans_ms = Duration::from_millis(50);
                         let sleep_ms = Duration::from_millis(500);
-            */
+             */
             while !shutdown_listener.load(Ordering::Relaxed) {
                 /*for (topic, reg) in instance.coils.clone() {
                     match ThermaV::get_coil(req_timeout, &mut ctx, reg).await {

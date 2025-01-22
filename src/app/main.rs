@@ -2,6 +2,7 @@ use std::ops::Deref;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use thermav_lib::config;
+use thermav_lib::hass::start_hass_mqtt_bridge_task;
 #[cfg(feature = "mqtt")]
 use thermav_lib::mqtt;
 
@@ -36,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         mqtt::modbus_to_mqtt::start_publish_task(mqtt_client, modbus.deref(), interrupted.clone());
 
         #[cfg(feature = "hass")]
-        mqtt::hass::start_hass_mqtt_bridge_task(mqtt_client, modbus.deref(), interrupted.clone());
+        start_hass_mqtt_bridge_task(mqtt_client, modbus.deref(), interrupted.clone());
     }
 
     start_service(cfg.http).await;
