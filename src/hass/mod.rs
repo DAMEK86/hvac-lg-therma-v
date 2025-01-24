@@ -329,14 +329,31 @@ pub fn start_hass_mqtt_bridge_task(
 
     // mqtt -> modbus
     tokio::spawn(async move {
+        /**        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                if let Err(err) = therma.set_coil(coil::EnableDisableHeatingCooling::reg(), true).await {
+                    log::error!(target: "mqtt-client", "failed to enable pump: {err}");
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                if let Err(err) = therma.set_coil(coil::SilentModeSet::reg(), true).await {
+                    log::error!(target: "mqtt-client", "failed to enable silent mode: {err}");
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                if let Err(err) = therma.set_register(holding::OperationMode::reg(), 4u16).await {
+                    log::error!(target: "mqtt-client", "failed to set operation mode to Heating: {err}");
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                if let Err(err) = therma.set_register(holding::ControlMethod::reg(), 1u16).await {
+                    log::error!(target: "mqtt-client", "failed to set control mode to room air: {err}");
+                }
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                if let Err(err) = therma.set_register(holding::EnergyStateInput::reg(), 2u16).await {
+                    log::error!(target: "mqtt-client", "failed to set EnergyStateInput to normal: {err}");
+                }
+        */
         loop {
             if forwarder_signal.load(std::sync::atomic::Ordering::Relaxed) {
                 return;
-            }
-
-            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-            if let Err(err) = therma.set_coil(coil::EnableDisableHeatingCooling::reg(), true).await {
-                log::error!(target: "mqtt-client", "failed to enable pump: {err}");
             }
 
             let (topic, payload) = match mqtt_rx.try_recv() {

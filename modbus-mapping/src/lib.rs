@@ -175,7 +175,8 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
                     impl From<Vec<u16>> for #name {
                         fn from(value: Vec<u16>) -> Self {
-                            #name(value[0] as f32 * #gain_value)
+                            let signed_value = value[0] as i16;
+                            #name(signed_value as f32 * #gain_value)
                         }
                     }
                 });
@@ -237,16 +238,17 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
                     impl From<Vec<u16>> for #name {
                         fn from(value: Vec<u16>) -> Self {
-                            #name(value[0] as f32 * #gain_value)
+                            let signed_value = value[0] as i16;
+                            #name(signed_value as f32 * #gain_value)
                         }
                     }
                 });
             }
             InputRegister::SignedChar(reg) => {
-                let name = syn::Ident::new(
-                    &sanitize_identifier(&reg.description),
-                    proc_macro2::Span::call_site(),
-                );
+                let reg_name = sanitize_identifier(&reg.description);
+                let topic = to_snake_case(reg_name.as_str());
+                let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
+
                 let reg_value = reg.reg;
 
                 input_generated_structs.push(quote! {
@@ -254,8 +256,9 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
                     #[derive(Debug)]
                     pub struct #name(i16);
 
-                    impl #name {
-                        pub fn reg() -> u16 { #reg_value }
+                    impl ModbusRegister<Vec<u16>> for #name {
+                        fn reg() -> u16 { #reg_value }
+                        fn topic() -> String { #topic.to_string() }
                     }
 
                     impl From<Vec<u16>> for #name {

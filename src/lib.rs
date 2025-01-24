@@ -103,10 +103,16 @@ impl ThermaV {
                     holding::ShiftValueTargetInAutoModeCircuit2::structure(),
                 ],
                 input_registers: vec![
-                    input::RoomAirTemperatureCircuit1::structure(),
-                    input::RoomAirTemperatureCircuit2::structure(),
+                    input::ErrorCode::structure(),
                     input::WaterInletTemperature::structure(),
                     input::WaterOutletTemperature::structure(),
+                    input::BackupHeaterOutletTemperature::structure(),
+                    input::DHWTankWaterTemperature::structure(),
+                    input::SolarCollectorTemperature::structure(),
+                    input::RoomAirTemperatureCircuit1::structure(),
+                    input::CurrentFlowRate::structure(),
+                    input::FlowTemperatureCircuit2::structure(),
+                    input::RoomAirTemperatureCircuit2::structure(),
                     input::OutdoorAirTemperature::structure(),
                 ],
                 ctx: ctx.clone(),
@@ -155,8 +161,8 @@ impl ThermaV {
         tokio::spawn(async move {
             instance.initialize_bus().await;
 
-            let sleep_booleans_ms = Duration::from_millis(50);
-            let sleep_ms = Duration::from_millis(500);
+            let sleep_booleans_ms = Duration::from_millis(500);
+            let sleep_ms = Duration::from_millis(50);
             while !shutdown_listener.load(Ordering::Relaxed) {
                 for (topic, reg) in instance.coils.clone() {
                     match instance.get_coil(reg).await {
@@ -202,25 +208,14 @@ impl ThermaV {
                     match instance.get_input(reg).await {
                         Ok(value) => {
                             match tx
-                                .send((Register::Input(InputRegister(reg, value.clone())), topic))
+                                .send((
+                                    Register::Input(InputRegister(reg, value.clone())),
+                                    topic.clone(),
+                                ))
                                 .await
                             {
                                 Ok(_) => {
-                                    if reg == input::RoomAirTemperatureCircuit1::reg() {
-                                        info!(target: "modbus:input", "RoomAirTemperatureCircuit1 {}={:?}", reg, input::RoomAirTemperatureCircuit1::from(value.clone()));
-                                    }
-                                    if reg == input::RoomAirTemperatureCircuit2::reg() {
-                                        info!(target: "modbus:input", "RoomAirTemperatureCircuit2 {}={:?}", reg, input::RoomAirTemperatureCircuit2::from(value.clone()));
-                                    }
-                                    if reg == input::WaterInletTemperature::reg() {
-                                        info!(target: "modbus:input", "WaterInletTemperature {}={:?}", reg, input::WaterInletTemperature::from(value.clone()));
-                                    }
-                                    if reg == input::WaterOutletTemperature::reg() {
-                                        info!(target: "modbus:input", "WaterOutletTemperature {}={:?}", reg, input::WaterOutletTemperature::from(value.clone()));
-                                    }
-                                    if reg == input::OutdoorAirTemperature::reg() {
-                                        info!(target: "modbus:input", "OutdoorAirTemperature {}={:?}", reg, input::OutdoorAirTemperature::from(value.clone()));
-                                    }
+                                    info!(target: "modbus:input", "{}/{}={:?}", reg, topic, value);
                                 }
                                 Err(err) => {
                                     log::error!(target: "modbus:input", "{}", err)
@@ -334,7 +329,30 @@ impl ThermaV {
         Err(format!("set failed 0x{:02x}", reg))
     }
 
+    pub async fn set_register(&self, reg: u16, value: u16) -> Result<()> {
+        if let Some(ctx) = &self.ctx {
+            if timeout(
+                self.req_timeout,
+                ctx.lock().await.write_single_register(reg, value),
+            )
+            .await
+            .is_ok()
+            {
+                return Ok(());
+            }
+        }
+        Err(format!("set failed 0x{:02x}", reg))
+    }
+
     pub async fn get_coil(&self, reg: u16) -> Result<bool> {
+        if let Some(ctx) = &self.ctx {
+            if let Ok(Ok(Ok(result))) =
+                timeout(self.req_timeout, ctx.lock().await.read_coils(reg, 1)).await
+            {
+                return Ok(result[0]);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
         if let Some(ctx) = &self.ctx {
             if let Ok(Ok(Ok(result))) =
                 timeout(self.req_timeout, ctx.lock().await.read_coils(reg, 1)).await
@@ -346,6 +364,17 @@ impl ThermaV {
     }
 
     pub async fn get_discrete(&self, reg: u16) -> Result<bool> {
+        if let Some(ctx) = &self.ctx {
+            if let Ok(Ok(Ok(result))) = timeout(
+                self.req_timeout,
+                ctx.lock().await.read_discrete_inputs(reg, 1),
+            )
+            .await
+            {
+                return Ok(result[0]);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
         if let Some(ctx) = &self.ctx {
             if let Ok(Ok(Ok(result))) = timeout(
                 self.req_timeout,
@@ -370,6 +399,17 @@ impl ThermaV {
                 return Ok(result);
             }
         }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        if let Some(ctx) = &self.ctx {
+            if let Ok(Ok(Ok(result))) = timeout(
+                self.req_timeout,
+                ctx.lock().await.read_holding_registers(reg, 1),
+            )
+            .await
+            {
+                return Ok(result);
+            }
+        }
         Err(format!("read failed 0x{:02x}", reg))
     }
 
@@ -377,7 +417,18 @@ impl ThermaV {
         if let Some(ctx) = &self.ctx {
             if let Ok(Ok(Ok(result))) = timeout(
                 self.req_timeout,
-                ctx.lock().await.read_holding_registers(reg, 1),
+                ctx.lock().await.read_input_registers(reg, 1),
+            )
+            .await
+            {
+                return Ok(result);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        if let Some(ctx) = &self.ctx {
+            if let Ok(Ok(Ok(result))) = timeout(
+                self.req_timeout,
+                ctx.lock().await.read_input_registers(reg, 1),
             )
             .await
             {
