@@ -1,15 +1,17 @@
-use crate::config::{ThermaConfig, DEFAULT_BAUD_RATE};
+use crate::config::{ThermaConfig, DEFAULT_BAUD_RATE, DEFAULT_TIMEOUT};
+use crate::hass::DeviceProperties;
 use crate::modbus::*;
 use crate::registers::{coil, discrete, holding, input, ModbusRegister};
 use log::info;
+use std::ops::Deref;
 use std::result;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::broadcast::{self, Receiver, Sender};
-use tokio::sync::RwLock;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::timeout;
-use tokio_modbus::client::{rtu, Context, Reader};
+use tokio_modbus::client::{rtu, Reader};
 use tokio_modbus::prelude::*;
 use tokio_modbus::Slave;
 use tokio_serial::SerialStream;
@@ -33,6 +35,10 @@ pub async fn rwlock_write_guard<T>(rwlock: &RwLock<T>) -> tokio::sync::RwLockWri
     rwlock.write().await
 }
 
+struct HassProperty {
+    register: Register,
+}
+
 #[derive(Clone, Debug)]
 #[allow(unused)]
 pub struct ThermaV {
@@ -43,6 +49,8 @@ pub struct ThermaV {
     holding_registers: Vec<(String, u16)>,
     input_registers: Vec<(String, u16)>,
     cfg: ThermaConfig,
+    ctx: Option<Arc<Mutex<client::Context>>>,
+    req_timeout: Duration,
 }
 
 #[derive(Clone, Debug)]
@@ -58,71 +66,109 @@ pub trait SignalListener {
 }
 
 impl ThermaV {
-    pub fn default(cfg: ThermaConfig) -> Self {
-        let (sender, _) = broadcast::channel(100);
-        Self {
-            sender,
-            cfg,
-            discrete_registers: vec![
-                discrete::WaterFlowStatus::structure(),
-                discrete::CompressorStatus::structure(),
-                discrete::CoolingStatus::structure(),
-                discrete::WaterPumpStatus::structure(),
-                discrete::DefrostingStatus::structure(),
-                discrete::BackupHeaterStep1Status::structure(),
-                discrete::BackupHeaterStep2Status::structure(),
-                discrete::DHWBoostHeaterStatus::structure(),
-                discrete::ErrorStatus::structure(),
-            ],
-            coils: vec![
-                coil::EnableDisableHeatingCooling::structure(),
-                coil::SilentModeSet::structure(),
-            ],
-            holding_registers: vec![
-                holding::OperationMode::structure(),
-                holding::ControlMethod::structure(),
-                holding::EnergyStateInput::structure(),
-                holding::TargetTempHeatingCoolingCircuit1::structure(),
-                holding::TargetTempHeatingCoolingCircuit2::structure(),
-                holding::RoomAirTempCircuit1::structure(),
-                holding::RoomAirTempCircuit2::structure(),
-                holding::DHWTargetTemp::structure(),
-                holding::ShiftValueTargetInAutoModeCircuit1::structure(),
-                holding::ShiftValueTargetInAutoModeCircuit2::structure(),
-            ],
-            input_registers: vec![
-                input::RoomAirTemperatureCircuit1::structure(),
-                input::RoomAirTemperatureCircuit2::structure(),
-                input::WaterInletTemperature::structure(),
-                input::WaterOutletTemperature::structure(),
-                input::OutdoorAirTemperature::structure(),
-            ],
-        }
+    pub fn default(
+        cfg: ThermaConfig,
+        ctx: Option<Arc<Mutex<client::Context>>>,
+    ) -> (Self, Receiver<(Register, String)>) {
+        let (sender, receiver) = mpsc::channel(100);
+        (
+            Self {
+                sender,
+                cfg: cfg.clone(),
+                discrete_registers: vec![
+                    discrete::WaterFlowStatus::structure(),  // check
+                    discrete::CompressorStatus::structure(), // check
+                    discrete::CoolingStatus::structure(),
+                    discrete::WaterPumpStatus::structure(), // check
+                    discrete::DefrostingStatus::structure(),
+                    discrete::BackupHeaterStep1Status::structure(),
+                    discrete::BackupHeaterStep2Status::structure(),
+                    discrete::DHWBoostHeaterStatus::structure(),
+                    discrete::ErrorStatus::structure(),
+                ],
+                coils: vec![
+                    coil::EnableDisableHeatingCooling::structure(),
+                    coil::SilentModeSet::structure(),
+                ],
+                holding_registers: vec![
+                    holding::OperationMode::structure(),
+                    holding::ControlMethod::structure(),
+                    holding::EnergyStateInput::structure(),
+                    holding::TargetTempHeatingCoolingCircuit1::structure(),
+                    holding::TargetTempHeatingCoolingCircuit2::structure(),
+                    holding::RoomAirTempCircuit1::structure(),
+                    holding::RoomAirTempCircuit2::structure(),
+                    holding::DHWTargetTemp::structure(),
+                    holding::ShiftValueTargetInAutoModeCircuit1::structure(),
+                    holding::ShiftValueTargetInAutoModeCircuit2::structure(),
+                ],
+                input_registers: vec![
+                    input::RoomAirTemperatureCircuit1::structure(),
+                    input::RoomAirTemperatureCircuit2::structure(),
+                    input::WaterInletTemperature::structure(),
+                    input::WaterOutletTemperature::structure(),
+                    input::OutdoorAirTemperature::structure(),
+                ],
+                ctx: ctx.clone(),
+                req_timeout: Duration::from_millis(cfg.timeout_ms),
+            },
+            receiver,
+        )
     }
 
-    pub async fn new(cfg: ThermaConfig, shutdown_listener: Arc<AtomicBool>) -> Result<Arc<Self>> {
-        let therma_instance = Arc::new(Self::default(cfg.clone()));
+    pub async fn new(
+        cfg: ThermaConfig,
+        shutdown_listener: Arc<AtomicBool>,
+    ) -> Result<(Self, Receiver<(Register, String)>)> {
+        let mut thread_safe_ctx: Option<Arc<Mutex<client::Context>>> = None;
+        #[cfg(feature = "io")]
+        {
+            let slave = Slave(cfg.slave_id);
+            let builder = tokio_serial::new(cfg.tty_path.clone(), DEFAULT_BAUD_RATE)
+                .timeout(Duration::from_millis(cfg.timeout_ms));
+            let port = SerialStream::open(&builder).unwrap();
+            let mut ctx = rtu::attach_slave(port, slave);
+            thread_safe_ctx = Some(Arc::new(Mutex::new(ctx)));
+        }
+        let (therma_instance, receiver) = Self::default(cfg, thread_safe_ctx);
         let instance = therma_instance.clone();
         let tx = instance.sender.clone();
-        let req_timeout = Duration::from_millis(cfg.timeout_ms);
+        #[cfg(not(feature = "io"))]
         tokio::spawn(async move {
-            /*            let slave = Slave(cfg.slave_id);
-                        let builder = tokio_serial::new(cfg.tty_path, DEFAULT_BAUD_RATE)
-                            .timeout(Duration::from_millis(cfg.timeout_ms));
-                        let port = SerialStream::open(&builder).unwrap();
-                        let mut ctx = rtu::attach_slave(port, slave);
-                        ThermaV::initialize_bus(req_timeout, &mut ctx).await;
-
-                        let sleep_booleans_ms = Duration::from_millis(50);
-                        let sleep_ms = Duration::from_millis(500);
-             */
+            let (topic, reg) = holding::TargetTempHeatingCoolingCircuit2::structure();
             while !shutdown_listener.load(Ordering::Relaxed) {
-                /*for (topic, reg) in instance.coils.clone() {
-                    match ThermaV::get_coil(req_timeout, &mut ctx, reg).await {
+                let topic = remap_topic_from_modbus(topic.clone());
+                if topic.eq("dhw/temperature") {
+                    tx.send((Register::Holding(HoldingRegister(reg, vec![43])), topic))
+                        .await;
+                }
+                let (topic, reg) = input::RoomAirTemperatureCircuit2::structure();
+                let topic = remap_topic_from_modbus(topic.clone());
+                if topic.eq("dhw/current_temperature") {
+                    tx.send((Register::Holding(HoldingRegister(reg, vec![35])), topic))
+                        .await;
+                }
+                tokio::time::sleep(Duration::from_millis(2000)).await;
+            }
+        });
+        #[cfg(feature = "io")]
+        tokio::spawn(async move {
+            instance.initialize_bus().await;
+
+            let sleep_booleans_ms = Duration::from_millis(50);
+            let sleep_ms = Duration::from_millis(500);
+            while !shutdown_listener.load(Ordering::Relaxed) {
+                for (topic, reg) in instance.coils.clone() {
+                    match instance.get_coil(reg).await {
                         Ok(value) => {
-                            match tx.send((Register::Coil(CoilRegister(reg, value)), topic)) {
+                            match tx
+                                .send((Register::Coil(CoilRegister(reg, value)), topic))
+                                .await
+                            {
                                 Ok(_) => info!(target: "modbus:coil", "reg {}={}", reg, value),
-                                Err(err) => log::error!(target: "modbus:coil", "forwarding failed: {}", err)
+                                Err(err) => {
+                                    log::error!(target: "modbus:coil", "forwarding failed: {}", err)
+                                }
                             }
                         }
                         Err(err) => {
@@ -133,11 +179,16 @@ impl ThermaV {
                 }
 
                 for (topic, reg) in instance.discrete_registers.clone() {
-                    match ThermaV::get_discrete(req_timeout, &mut ctx, reg).await {
+                    match instance.get_discrete(reg).await {
                         Ok(value) => {
-                            match tx.send((Register::Discrete(DiscreteRegister(reg, value)), topic)) {
+                            match tx
+                                .send((Register::Discrete(DiscreteRegister(reg, value)), topic))
+                                .await
+                            {
                                 Ok(_) => info!(target: "modbus:discrete", "reg {}={}", reg, value),
-                                Err(err) => log::error!(target: "modbus:discrete", "forwarding failed: {}", err)
+                                Err(err) => {
+                                    log::error!(target: "modbus:discrete", "forwarding failed: {}", err)
+                                }
                             }
                         }
                         Err(err) => {
@@ -148,9 +199,12 @@ impl ThermaV {
                 }
 
                 for (topic, reg) in instance.input_registers.clone() {
-                    match ThermaV::get_input(req_timeout, &mut ctx, reg).await {
+                    match instance.get_input(reg).await {
                         Ok(value) => {
-                            match tx.send((Register::Input(InputRegister(reg, value.clone())), topic)) {
+                            match tx
+                                .send((Register::Input(InputRegister(reg, value.clone())), topic))
+                                .await
+                            {
                                 Ok(_) => {
                                     if reg == input::RoomAirTemperatureCircuit1::reg() {
                                         info!(target: "modbus:input", "RoomAirTemperatureCircuit1 {}={:?}", reg, input::RoomAirTemperatureCircuit1::from(value.clone()));
@@ -181,9 +235,16 @@ impl ThermaV {
                 }
 
                 for (topic, reg) in instance.holding_registers.clone() {
-                    match ThermaV::get_holding(req_timeout, &mut ctx, reg).await {
+                    match instance.get_holding(reg).await {
                         Ok(value) => {
-                            match tx.send((Register::Holding(HoldingRegister(reg, value.clone())), topic)) {
+                            let topic = remap_topic_from_modbus(topic);
+                            match tx
+                                .send((
+                                    Register::Holding(HoldingRegister(reg, value.clone())),
+                                    topic,
+                                ))
+                                .await
+                            {
                                 Ok(_) => {
                                     if reg == holding::OperationMode::reg() {
                                         info!(target: "modbus:holding", "OperationMode {}={:?}", reg, holding::OperationMode::from(value.clone()));
@@ -215,99 +276,149 @@ impl ThermaV {
                                     if reg == holding::ShiftValueTargetInAutoModeCircuit2::reg() {
                                         info!(target: "modbus:holding", "ShiftValueTargetInAutoModeCircuit2 {}={:?}", reg, holding::ShiftValueTargetInAutoModeCircuit1::from(value.clone()));
                                     }
-                                },
-                                Err(err) => log::error!(target: "modbus:holding", "forwarding failed: {}", err)
+                                }
+                                Err(err) => {
+                                    log::error!(target: "modbus:holding", "forwarding failed: {}", err)
+                                }
                             }
                         }
                         Err(err) => {
+                            #[cfg(not(feature = "io"))]
+                            {
+                                let topic = remap_topic_from_modbus(topic);
+                                if topic.eq("dhw/temperature") {
+                                    tx.send((
+                                        Register::Holding(HoldingRegister(reg, vec![0xA1])),
+                                        topic,
+                                    ))
+                                    .await;
+                                }
+                            }
                             log::error!(target: "modbus:holding", "{}", err)
                         }
                     }
                     tokio::time::sleep(sleep_ms).await;
                 }
-                tx.send((Register::Discrete(DiscreteRegister(9999, true)), String::from("dhw_availability"))).expect("");
-                */
                 tokio::time::sleep(Duration::from_millis(2000)).await;
             }
         });
 
-        Ok(therma_instance)
+        Ok((therma_instance, receiver))
     }
 
-    async fn water_flow_status(&mut self) -> Result<bool> {
-        //ThermaV::get_discrete(self.)
-        !todo!()
-    }
-
-    pub async fn initialize_bus(req_timeout: Duration, ctx: &mut client::Context) {
+    async fn initialize_bus(&self) {
         info!("Starting Modbus initialization");
         for _ in 0..3 {
-            let _ = timeout(req_timeout, ctx.read_coils(coil::EmergencyStop::reg(), 1)).await;
+            if let Some(ctx) = &self.ctx {
+                let _ = timeout(
+                    self.req_timeout,
+                    ctx.lock().await.read_coils(coil::EmergencyStop::reg(), 1),
+                )
+                .await;
+            }
         }
     }
 
-    pub async fn set_coil(
-        req_timeout: Duration,
-        ctx: &mut client::Context,
-        reg: u16,
-        value: bool,
-    ) -> Result<()> {
-        if timeout(req_timeout, ctx.write_single_coil(reg, value))
+    pub async fn set_coil(&self, reg: u16, value: bool) -> Result<()> {
+        if let Some(ctx) = &self.ctx {
+            if timeout(
+                self.req_timeout,
+                ctx.lock().await.write_single_coil(reg, value),
+            )
             .await
             .is_ok()
-        {
-            return Ok(());
+            {
+                return Ok(());
+            }
         }
         Err(format!("set failed 0x{:02x}", reg))
     }
 
-    pub async fn get_coil(
-        req_timeout: Duration,
-        ctx: &mut client::Context,
-        reg: u16,
-    ) -> Result<bool> {
-        if let Ok(Ok(Ok(result))) = timeout(req_timeout, ctx.read_coils(reg, 1)).await {
-            return Ok(result[0]);
+    pub async fn get_coil(&self, reg: u16) -> Result<bool> {
+        if let Some(ctx) = &self.ctx {
+            if let Ok(Ok(Ok(result))) =
+                timeout(self.req_timeout, ctx.lock().await.read_coils(reg, 1)).await
+            {
+                return Ok(result[0]);
+            }
         }
         Err(format!("read failed 0x{:02x}", reg))
     }
 
-    pub async fn get_discrete(
-        req_timeout: Duration,
-        ctx: &mut client::Context,
-        reg: u16,
-    ) -> Result<bool> {
-        if let Ok(Ok(Ok(result))) = timeout(req_timeout, ctx.read_discrete_inputs(reg, 1)).await {
-            return Ok(result[0]);
+    pub async fn get_discrete(&self, reg: u16) -> Result<bool> {
+        if let Some(ctx) = &self.ctx {
+            if let Ok(Ok(Ok(result))) = timeout(
+                self.req_timeout,
+                ctx.lock().await.read_discrete_inputs(reg, 1),
+            )
+            .await
+            {
+                return Ok(result[0]);
+            }
         }
         Err(format!("read failed 0x{:02x}", reg))
     }
 
-    pub async fn get_holding(
-        req_timeout: Duration,
-        ctx: &mut client::Context,
-        reg: u16,
-    ) -> Result<Vec<u16>> {
-        if let Ok(Ok(Ok(result))) = timeout(req_timeout, ctx.read_holding_registers(reg, 1)).await {
-            return Ok(result);
+    pub async fn get_holding(&self, reg: u16) -> Result<Vec<u16>> {
+        if let Some(ctx) = &self.ctx {
+            if let Ok(Ok(Ok(result))) = timeout(
+                self.req_timeout,
+                ctx.lock().await.read_holding_registers(reg, 1),
+            )
+            .await
+            {
+                return Ok(result);
+            }
         }
         Err(format!("read failed 0x{:02x}", reg))
     }
 
-    pub async fn get_input(
-        req_timeout: Duration,
-        ctx: &mut client::Context,
-        reg: u16,
-    ) -> Result<Vec<u16>> {
-        if let Ok(Ok(Ok(result))) = timeout(req_timeout, ctx.read_input_registers(reg, 1)).await {
-            return Ok(result);
+    pub async fn get_input(&self, reg: u16) -> Result<Vec<u16>> {
+        if let Some(ctx) = &self.ctx {
+            if let Ok(Ok(Ok(result))) = timeout(
+                self.req_timeout,
+                ctx.lock().await.read_holding_registers(reg, 1),
+            )
+            .await
+            {
+                return Ok(result);
+            }
         }
         Err(format!("read failed 0x{:02x}", reg))
     }
 }
 
-impl SignalListener for ThermaV {
-    fn register_receiver(&self) -> Receiver<(Register, String)> {
-        self.sender.subscribe()
+fn remap_topic_from_modbus(topic: String) -> String {
+    match topic.as_str() {
+        "operation_mode" => String::from(""),
+        "target_temp_heating_cooling_circuit2" => String::from("dhw/temperature"),
+        "room_air_temperature_circuit2" => String::from("dhw/current_temperature"),
+        &_ => topic,
+    }
+}
+
+impl DeviceProperties for ThermaV {
+    fn base_topic(&self) -> String {
+        String::from("ThermaV")
+    }
+
+    fn id(&self) -> String {
+        String::from("thermav")
+    }
+
+    fn name(&self) -> String {
+        String::from("ThermaV R32")
+    }
+
+    fn manufacturer(&self) -> String {
+        String::from("LG")
+    }
+
+    fn origin_name(&self) -> String {
+        String::from("LG ThermaV")
+    }
+
+    fn model(&self) -> String {
+        String::from("ThermaV R32")
     }
 }

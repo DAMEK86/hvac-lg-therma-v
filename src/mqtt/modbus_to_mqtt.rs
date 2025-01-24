@@ -1,4 +1,4 @@
-use crate::{ReadableModbusReg, Register, SignalListener};
+use crate::{Register, SignalListener};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 

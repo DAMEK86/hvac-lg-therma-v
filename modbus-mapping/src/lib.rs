@@ -116,6 +116,21 @@ fn sanitize_identifier(name: &str) -> String {
     words.concat().replace('_', "")
 }
 
+fn to_snake_case(input: &str) -> String {
+    let mut result = String::new();
+    for (i, c) in input.chars().enumerate() {
+        if c.is_uppercase() {
+            if i > 0 {
+                result.push('_');
+            }
+            result.push(c.to_ascii_lowercase());
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
     // Read the JSON file
     let json_data =
@@ -142,6 +157,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
             }
             HoldingRegister::Float(reg) => {
                 let reg_name = sanitize_identifier(&reg.description);
+                let topic = to_snake_case(reg_name.as_str());
                 let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
 
                 let gain_value: f32 = reg.gain.unwrap_or(1f32);
@@ -154,7 +170,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
                     impl ModbusRegister<Vec<u16>> for #name {
                         fn reg() -> u16 { #reg_value }
-                        fn topic() -> String { #reg_name.to_string() }
+                        fn topic() -> String { #topic.to_string() }
                     }
 
                     impl From<Vec<u16>> for #name {
@@ -166,6 +182,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
             }
             HoldingRegister::SignedChar(reg) => {
                 let reg_name = sanitize_identifier(&reg.description);
+                let topic = to_snake_case(reg_name.as_str());
                 let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
                 let reg_value = reg.reg;
 
@@ -176,7 +193,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
                     impl ModbusRegister<Vec<u16>> for #name {
                         fn reg() -> u16 { #reg_value }
-                        fn topic() -> String { #reg_name.to_string() }
+                        fn topic() -> String { #topic.to_string() }
                     }
 
                     impl From<Vec<u16>> for #name {
@@ -202,6 +219,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
             }
             InputRegister::Float(reg) => {
                 let reg_name = sanitize_identifier(&reg.description);
+                let topic = to_snake_case(reg_name.as_str());
                 let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
 
                 let gain_value: f32 = reg.gain.unwrap_or(1f32);
@@ -214,7 +232,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
                     impl ModbusRegister<Vec<u16>> for #name {
                         fn reg() -> u16 { #reg_value }
-                        fn topic() -> String { #reg_name.to_string() }
+                        fn topic() -> String { #topic.to_string() }
                     }
 
                     impl From<Vec<u16>> for #name {
@@ -253,6 +271,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
     for entry in parsed.coil {
         let reg_name = sanitize_identifier(&entry.description);
+        let topic = to_snake_case(reg_name.as_str());
         let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
 
         let reg_value = entry.reg;
@@ -270,7 +289,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
             impl ModbusRegister<Vec<bool>> for #name {
                 fn reg() -> u16 { #reg_value }
-                fn topic() -> String { #reg_name.to_string() }
+                fn topic() -> String { #topic.to_string() }
             }
 
             impl #name {
@@ -293,6 +312,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
     for entry in parsed.discrete {
         let reg_name = sanitize_identifier(&entry.description);
+        let topic = to_snake_case(reg_name.as_str());
         let name = syn::Ident::new(&reg_name, proc_macro2::Span::call_site());
 
         let reg_value = entry.reg;
@@ -310,7 +330,7 @@ pub fn generate_registers(modbus_register_data_file_path: &str) -> TokenStream {
 
             impl ModbusRegister<Vec<bool>> for #name {
                 fn reg() -> u16 { #reg_value }
-                fn topic() -> String { #reg_name.to_string() }
+                fn topic() -> String { #topic.to_string() }
             }
 
             impl #name {
@@ -389,6 +409,7 @@ fn generate_enum(
     reg: HashMap<String, u16>,
     reg_value: u16,
 ) {
+    let topic = to_snake_case(reg_name.as_str());
     let mut variants: Vec<TokenStream> = Vec::new();
     let mut match_arms: Vec<TokenStream> = Vec::new();
 
@@ -422,7 +443,7 @@ fn generate_enum(
 
         impl ModbusRegister<Vec<u16>> for #enum_name {
             fn reg() -> u16 { #reg_value }
-            fn topic() -> String { #reg_name.to_string() }
+            fn topic() -> String { #topic.to_string() }
         }
 
         impl From<Vec<u16>> for #enum_name {

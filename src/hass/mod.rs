@@ -1,8 +1,10 @@
-use crate::{mqtt, rwlock_read_guard, rwlock_write_guard, SignalListener};
+use crate::registers::{coil, holding, ModbusRegister};
+use crate::{mqtt, rwlock_read_guard, rwlock_write_guard, Register, SignalListener, ThermaV};
 use config::Map;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc};
+use std::sync::Arc;
+use tokio::sync::mpsc::Receiver;
 
 #[derive(Serialize, Clone)]
 pub struct Discovery {
@@ -69,15 +71,20 @@ pub struct Component {
     pub temperature_command_topic: Option<String>,
     #[serde(rename = "curr_temp_t", skip_serializing_if = "Option::is_none")]
     pub current_temperature_topic: Option<String>,
+
+    #[serde(rename = "ops", skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<String>>,
+    #[serde(rename = "cmd_t", skip_serializing_if = "Option::is_none")]
+    pub command_topic: Option<String>,
 }
 
 impl Component {
-    pub fn new(name: &str, device_name: &str, id: &str, icon: &str) -> Self {
+    pub fn new(name: &str, device_name: &str, device_id: &str, id: &str, icon: &str) -> Self {
         Self {
             name: String::from(name),
             object_id: format!("{}.{}", device_name, id),
             unique_id: format!("{}.{}", device_name, id),
-            state_topic: format!("{}/{}.{}", device_name, device_name.to_lowercase(), id),
+            state_topic: format!("{}/{}.{}", device_name, device_id, id),
             availability_topic: format!("{}/$state", device_name),
             payload_available: String::from("ready"),
             payload_not_available: String::from("lost"),
@@ -109,6 +116,13 @@ impl Component {
         self.current_temperature_topic =
             Some(format!("{}/current_temperature", self.state_topic.clone()));
         self.modes = Some(modes.iter().map(|s| s.to_string()).collect());
+        self
+    }
+
+    pub fn select(mut self, options: Vec<&str>) -> Self {
+        self.platform = "select".to_string();
+        self.options = Some(options.iter().map(|s| s.to_string()).collect());
+        self.command_topic = Some(format!("{}/mode", self.state_topic.clone()));
         self
     }
 }
@@ -158,12 +172,21 @@ impl From<DeviceConfig> for Device {
     }
 }
 
-fn create_discovery_message() -> Discovery {
+pub trait DeviceProperties {
+    fn base_topic(&self) -> String;
+    fn id(&self) -> String;
+    fn name(&self) -> String;
+    fn manufacturer(&self) -> String;
+    fn origin_name(&self) -> String;
+    fn model(&self) -> String;
+}
+
+fn create_discovery_message(device_properties: &impl DeviceProperties) -> Discovery {
     let device_config: DeviceConfig = DeviceConfig {
-        id: "lg_therma_v".to_string(),
-        name: "ThermaV R32".to_string(),
-        manufacturer: "LG".to_string(),
-        model: "ThermaV R32".to_string(),
+        id: device_properties.id(),
+        name: device_properties.name(),
+        manufacturer: device_properties.manufacturer(),
+        model: device_properties.model(),
     };
 
     let mut map = Map::<String, Component>::new();
@@ -171,8 +194,21 @@ fn create_discovery_message() -> Discovery {
         map.len().to_string(),
         Component::new(
             "Inlet Temperature",
-            "ThermaV",
-            "inlet_temperature",
+            device_properties.base_topic().as_str(),
+            device_config.id.as_str(),
+            "water_inlet_temperature",
+            "mdi:water-thermometer",
+        )
+        .temperature_sensor(),
+    );
+
+    map.insert(
+        map.len().to_string(),
+        Component::new(
+            "Outlet Temperature",
+            device_properties.base_topic().as_str(),
+            device_config.id.as_str(),
+            "water_outlet_temperature",
             "mdi:water-thermometer",
         )
         .temperature_sensor(),
@@ -182,26 +218,83 @@ fn create_discovery_message() -> Discovery {
         map.len().to_string(),
         Component::new(
             "Water Flow Status",
-            "ThermaV",
+            device_properties.base_topic().as_str(),
+            device_config.id.as_str(),
             "water_flow_status",
-            "mdi:water-pump",
+            "mdi:waves-arrow-right",
         )
         .binary_sensor(),
     );
     map.insert(
         map.len().to_string(),
-        Component::new("DHW", "ThermaV", "dhw", "mdi:water-boiler").water_heater(vec![
-            "off",
-            "eco",
-            "heat_pump",
-            "performance",
+        Component::new(
+            "Water Pump Status",
+            device_properties.base_topic().as_str(),
+            device_config.id.as_str(),
+            "water_pump_status",
+            "mdi:heat-pump",
+        )
+        .binary_sensor(),
+    );
+    map.insert(
+        map.len().to_string(),
+        Component::new(
+            "Compressor Status",
+            device_properties.base_topic().as_str(),
+            device_config.id.as_str(),
+            "compressor_status",
+            "mdi:arrow-collapse-all",
+        )
+        .binary_sensor(),
+    );
+    map.insert(
+        map.len().to_string(),
+        Component::new(
+            "DHW Heating Status",
+            device_properties.base_topic().as_str(),
+            device_config.id.as_str(),
+            "d_h_w_heating_status_d_h_w_thermal_on_off",
+            "mdi:water-boiler",
+        )
+        .binary_sensor(),
+    );
+    map.insert(
+        map.len().to_string(),
+        Component::new(
+            "DHW",
+            device_properties.base_topic().as_str(),
+            device_config.id.as_str(),
+            "dhw",
+            "mdi:water-boiler",
+        )
+        .water_heater(vec!["off", "heat_pump"]),
+    );
+
+    map.insert(
+        map.len().to_string(),
+        Component::new(
+            "Energy State Input",
+            device_properties.base_topic().as_str(),
+            device_config.id.as_str(),
+            "energy_mode",
+            "mdi:battery-charging-high",
+        )
+        .select(vec![
+            "Not Use",
+            "Forced Off",
+            "Normal Operation",
+            "On-recommendation",
+            "On-command step 2",
+            "On-recommendation Step 1",
+            "Energy Saving mode",
+            "Super Energy saving mode",
         ]),
     );
 
     Discovery {
         device: device_config.into(),
         origin: Origin {
-            name: "LG ThermaV".to_string(),
+            name: device_properties.origin_name(),
             sw_version: None,
             support_url: None,
         },
@@ -222,23 +315,59 @@ impl From<BinarySensor> for Vec<u8> {
     }
 }
 
-pub fn start_hass_mqtt_bridge_task<T>(
+pub fn start_hass_mqtt_bridge_task(
+    therma: ThermaV,
     mqtt_client: mqtt::Client,
-    modbus_frame_listener: &T,
+    mut modbus_rx: Receiver<(Register, String)>,
+    mut mqtt_rx: Receiver<(String, String)>,
     signal: Arc<AtomicBool>,
-) where
-    T: SignalListener,
-{
+) {
     let mqtt_client = Arc::new(tokio::sync::RwLock::new(mqtt_client));
-    let mut modbus_rx = modbus_frame_listener.register_receiver();
-    let mut hass_client = Hass::new(mqtt_client.clone(), String::from("ThermaV"));
+    let therma_clone = therma.clone();
+    let mut hass_client = Hass::new(mqtt_client.clone(), String::from(&therma.base_topic()));
+    let forwarder_signal = signal.clone();
+
+    // mqtt -> modbus
     tokio::spawn(async move {
-        let discovery_message = create_discovery_message();
+        loop {
+            if forwarder_signal.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            if let Err(err) = therma.set_coil(coil::EnableDisableHeatingCooling::reg(), true).await {
+                log::error!(target: "mqtt-client", "failed to enable pump: {err}");
+            }
+
+            let (topic, payload) = match mqtt_rx.try_recv() {
+                Ok((topic, payload)) => (topic, payload),
+                Err(_) => {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                    continue;
+                }
+            };
+            // TODO: rework separation of concern.
+            let _ = match topic.as_str() {
+                "ThermaV/thermav.dhw/temperature/set" => therma
+                    .set_coil(
+                        holding::TargetTempHeatingCoolingCircuit2::reg(),
+                        payload.eq("true"),
+                    )
+                    .await
+                    .map_err(|err| err.to_string()),
+                &_ => Ok(()),
+            };
+
+            println!("{}: {}", topic, payload);
+        }
+    });
+    tokio::spawn(async move {
+        let discovery_message = create_discovery_message(&therma_clone);
         {
             let client = rwlock_read_guard(&mqtt_client).await;
             if let Err(error) = client
                 .publish_with_base_topic(
-                    format!("device/{}/config", String::from("lg_therma_v")),
+                    format!("device/{}/config", &therma_clone.id()),
                     discovery_message.clone(),
                 )
                 .await
@@ -251,25 +380,29 @@ pub fn start_hass_mqtt_bridge_task<T>(
 
         hass_client.publish_state(true).await;
         let mut state = BinarySensor(false);
-        loop {
-            if signal.load(std::sync::atomic::Ordering::Relaxed) {
-                return;
-            }
 
-            if let Some(error) = hass_client
-                .send_sensor_data("thermav.water_flow_status", state.clone())
-                .await
-            {
-                log::error!(target: "mqtt-client", "failed to send data: {error}");
-            }
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            state.0 = !state.0;
+        if let Some(error) = hass_client
+            .send_sensor_data("thermav.dhw/mode", "heat_pump")
+            .await
+        {
+            log::error!(target: "mqtt-client", "failed to send data: {error}");
         }
 
-        /*
+        // modbus -> mqtt
         loop {
             if signal.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
+            }
+
+            #[cfg(not(feature = "io"))]
+            {
+                if let Some(error) = hass_client
+                    .send_sensor_data("thermav.water_flow_status", state.clone())
+                    .await
+                {
+                    log::error!(target: "mqtt-client", "failed to send data: {error}");
+                }
+                state.0 = !state.0;
             }
 
             let (reg, topic) = match modbus_rx.try_recv() {
@@ -279,46 +412,39 @@ pub fn start_hass_mqtt_bridge_task<T>(
                     continue;
                 }
             };
+            let normalized_topic = format!("{}.{}", therma_clone.id(), &topic);
             match reg {
                 Register::Coil(reg) => {
-                    if let Some(error) = mqtt_client
-                        .publish(format!("coils/{:03x}", reg.0), vec![reg.1 as u8])
+                    if let Some(error) = hass_client
+                        .send_sensor_data(&normalized_topic, BinarySensor(reg.1))
                         .await
                     {
                         log::error!(target: "mqtt-client", "failed to publish mqtt msg: {error}");
                     }
                 }
                 Register::Discrete(reg) => {
-                    if let Some(error) = mqtt_client
-                        .publish(format!("discrete/{:03x}", reg.0), vec![reg.1 as u8])
+                    if let Some(error) = hass_client
+                        .send_sensor_data(&normalized_topic, BinarySensor(reg.1))
                         .await
                     {
                         log::error!(target: "mqtt-client", "failed to publish mqtt msg: {error}");
                     }
                 }
                 Register::Holding(reg) => {
-                    if let Some(error) = mqtt_client
-                        .publish(
-                            format!("holding/{:03x}", reg.0),
-                            reg.1
-                                .iter()
-                                .flat_map(|&num| num.to_le_bytes())
-                                .collect::<Vec<_>>(),
-                        )
+                    let value = reg.1[0] as f64 * 0.1;
+                    log::info!(target: "mqtt-client", "{}={}",normalized_topic, value);
+                    if let Some(error) = hass_client
+                        .send_sensor_data(&normalized_topic, value.to_string())
                         .await
                     {
                         log::error!(target: "mqtt-client", "failed to publish mqtt msg: {error}");
                     }
                 }
                 Register::Input(reg) => {
-                    if let Some(error) = mqtt_client
-                        .publish(
-                            format!("input/{:03x}", reg.0),
-                            reg.1
-                                .iter()
-                                .flat_map(|&num| num.to_le_bytes())
-                                .collect::<Vec<_>>(),
-                        )
+                    let value = reg.1[0] as f64 * 0.1;
+                    log::info!(target: "mqtt-client", "{}={}",normalized_topic, value);
+                    if let Some(error) = hass_client
+                        .send_sensor_data(&normalized_topic, value.to_string())
                         .await
                     {
                         log::error!(target: "mqtt-client", "failed to publish mqtt msg: {error}");
@@ -326,13 +452,8 @@ pub fn start_hass_mqtt_bridge_task<T>(
                 }
             }
 
-            if topic == "dhw_availability" {
-                mqtt_client
-                    .publish("ThermaV/dhw/availability", String::from("online"))
-                    .await;
-            }
+            //tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
-        */
     });
 }
 
@@ -363,29 +484,13 @@ impl Hass {
         let mut client = rwlock_write_guard(&self.mqtt_client).await;
         for component in device_discovery.components {
             if let Some(topic) = component.1.mode_command_topic {
-                if let Err(err) = client
-                    .subscribe(
-                        topic,
-                        Arc::new(|topic, payload| {
-                            println!("receive 'mode_command_topic' {}: {}", topic, payload);
-                        }),
-                    )
-                    .await
-                {
+                if let Err(err) = client.subscribe(topic).await {
                     log::error!(target: "mqtt-client", "failed to subscribe msg: {err}");
                 }
             }
 
             if let Some(topic) = component.1.temperature_command_topic {
-                if let Err(err) = client
-                    .subscribe(
-                        topic,
-                        Arc::new(|topic, payload| {
-                            println!("receive 'temperature_command_topic' {}: {}", topic, payload);
-                        }),
-                    )
-                    .await
-                {
+                if let Err(err) = client.subscribe(topic).await {
                     log::error!(target: "mqtt-client", "failed to subscribe msg: {err}");
                 }
             }

@@ -48,7 +48,6 @@ tokio-modbus = { version = "0.16.1", default-features = false, features = ["rtu"
 tokio-serial = { version = "5.4", default-features = false }
 utoipa = { version = "5.1.1", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "8.0.1", features = ["axum", "debug-embed"] }
-async-trait = "0.1.82"
 
 [build-dependencies]
 modbus-mapping = { path = "./modbus-mapping" }
@@ -72,6 +71,7 @@ members = ["modbus-mapping", "."]
 default-members = ["modbus-mapping", "."]
 
 [features]
-default = ["hass"]
+default = ["hass", "io"]
 mqtt = ["dep:rumqttc"]
 hass = ["mqtt"]
+io = []

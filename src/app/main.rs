@@ -1,4 +1,3 @@
-use std::ops::Deref;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use thermav_lib::config;
@@ -21,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = config::read_config();
     let interrupted = Arc::new(AtomicBool::new(false));
 
-    let modbus = ThermaV::new(cfg.therma, interrupted.clone())
+    let (therma, modbus_rx) = ThermaV::new(cfg.therma, interrupted.clone())
         .await
         .unwrap_or_else(|e| {
             log::error!(target: "main", "Unable to initialize modbus: {}", e);
@@ -31,13 +30,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "mqtt")]
     {
         #[allow(unused_variables)]
-        let mqtt_client = mqtt::Client::new(&cfg.mqtt, interrupted.clone());
+        let (mqtt_client, mqtt_rx) = mqtt::Client::new(&cfg.mqtt, interrupted.clone());
 
         #[cfg(not(feature = "hass"))]
         mqtt::modbus_to_mqtt::start_publish_task(mqtt_client, modbus.deref(), interrupted.clone());
 
         #[cfg(feature = "hass")]
-        start_hass_mqtt_bridge_task(mqtt_client, modbus.deref(), interrupted.clone());
+        start_hass_mqtt_bridge_task(therma, mqtt_client, modbus_rx, mqtt_rx, interrupted.clone());
     }
 
     start_service(cfg.http).await;
